@@ -36,7 +36,8 @@ python3.11-distutils \
 python3-pip \
 nginx \
 git \
-screen 
+screen \
+zstd 
 
 echo "========================================="
 echo "Python version:"
@@ -58,6 +59,41 @@ pip3 install --break-system-packages -r "$APP_DIR/requirements.txt"
 else
 echo "WARNING: requirements.txt not found"
 fi
+
+
+echo "========================================="
+echo "Checking Ollama installation..."
+echo "========================================="
+
+if ! command -v ollama &> /dev/null; then
+echo "Ollama not found. Installing..."
+curl -fsSL https://ollama.com/install.sh | sh
+else
+echo "Ollama already installed. Skipping..."
+fi
+
+echo "========================================="
+echo "Starting Ollama service..."
+echo "========================================="
+
+sudo systemctl enable ollama
+sudo systemctl restart ollama
+
+echo "========================================="
+echo "Pulling model (if not exists)..."
+echo "========================================="
+
+ollama list | grep -q "qwen2.5:3b" || ollama pull qwen2.5:3b
+
+echo "========================================="
+echo "Restarting chatbot service..."
+echo "========================================="
+
+sudo systemctl restart $APP_NAME
+
+echo "========================================="
+echo "DONE!"
+echo "========================================="
 
 echo "========================================="
 echo "Creating systemd service..."
