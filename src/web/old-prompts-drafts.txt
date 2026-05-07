@@ -1,0 +1,2 @@
+# simple web server for testing, with simplest database, with interface with local ollama models, and i want to be able to configure the env for both the server and the frontend
+# note that later this project will be deployed on azure vm, BUT the llm will be running on this local machine once, on the azure machine once, and using hugging face api once. so we need to be able to configure the env for both the server and the frontend for all that stuff
