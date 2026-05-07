@@ -35,7 +35,8 @@ python3.11-dev \
 python3.11-distutils \
 python3-pip \
 nginx \
-git 
+git \
+screen 
 
 echo "========================================="
 echo "Python version:"
@@ -125,14 +126,10 @@ echo "========================================="
 sudo systemctl restart nginx
 
 echo "========================================="
-echo "Starting chatbot service..."
+echo "Starting chatbot server in background..."
 echo "========================================="
 
-sudo systemctl daemon-reload
-
-sudo systemctl enable $APP_NAME
-
-sudo systemctl restart $APP_NAME
+screen -dmS chatbot python3 server.py
 
 echo "========================================="
 echo "DONE!"
@@ -144,72 +141,36 @@ echo "Useful commands:"
 
 echo "-----------------------------------------"
 
-echo "Check app status:"
-echo "sudo systemctl status $APP_NAME"
+echo "Attach to server session:"
+echo "screen -r chatbot"
 
 echo ""
 
-echo "Restart app:"
-echo "sudo systemctl restart $APP_NAME"
+echo "Detach from session (inside screen):"
+echo "Ctrl+A, D"
 
 echo ""
 
-echo "Live logs:"
-echo "journalctl -u $APP_NAME -f"
+echo "Stop server:"
+echo "screen -S chatbot -X quit"
 
 echo ""
 
-echo "Restart nginx:"
-echo "sudo systemctl restart nginx"
+echo "Check if running:"
+echo "screen -ls | grep chatbot"
 
 echo ""
-
-MY_IP=$(curl ifconfig.me)
-echo "Your server should now be accessible at:"
-echo "http://$MY_IP"
-
-echo "========================================="
-echo "Checking Ollama installation..."
-echo "========================================="
-
-if ! command -v ollama &> /dev/null; then
-echo "Ollama not found. Installing..."
-curl -fsSL https://ollama.com/install.sh | sh
-else
-echo "Ollama already installed. Skipping..."
-fi
-
-echo "========================================="
-echo "Starting Ollama service..."
-echo "========================================="
-
-sudo systemctl enable ollama
-sudo systemctl restart ollama
-
-echo "========================================="
-echo "Pulling model (if not exists)..."
-echo "========================================="
-
-ollama list | grep -q "qwen2.5:3b" || ollama pull qwen2.5:3b
-
-echo "========================================="
-echo "Restarting chatbot service..."
-echo "========================================="
-
-sudo systemctl restart $APP_NAME
-
-echo "========================================="
-echo "DONE!"
-echo "========================================="
 
 MY_IP=$(curl -s ifconfig.me)
-
+echo "Your server should now be accessible at:"
+echo "http://$MY_IP:$PORT"
 echo ""
-echo "========================================="
-echo "DEPLOYMENT COMPLETE"
-echo "========================================="
-echo "Server URL:"
-echo "http://$MY_IP"
+
 echo "========================================="
 
-python3 server.py
+echo "To Attach to the session: screen -r chatbot"
+echo "Detach from the session (while inside): Press Ctrl+A, then D"
+echo "Stop the server: screen -S chatbot -X quit"
+echo "Check if running: screen -ls | grep chatbot"
+echo "Your server should now be accessible at: http://$MY_IP:$PORT"
+echo "========================================="
