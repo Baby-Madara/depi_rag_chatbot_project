@@ -1,14 +1,32 @@
 import os
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Security, Depends
+from fastapi.security import APIKeyHeader
 from pydantic import BaseModel
 import chromadb
 from sentence_transformers import SentenceTransformer
 from openai import AzureOpenAI
 
 # 1. Initialize API App
-app = FastAPI(title="CityFoam Customer Support API", version="1.0")
+app = FastAPI(title="CityFoam Customer Support API", version="1.1")
 
-# 2. Setup AI and Database Clients (Loads once when server starts)
+# ==========================================
+# NEW: SECURITY SETUP
+# ==========================================
+# In a real production environment, you would load this from a hidden .env file!
+CITYFOAM_SECRET_KEY = "cf_secure_key_2026" 
+API_KEY_NAME = "X-API-Key"
+
+# This tells FastAPI to look for 'X-API-Key' in the headers of every request
+api_key_header = APIKeyHeader(name=API_KEY_NAME, auto_error=True)
+
+def verify_api_key(api_key: str = Security(api_key_header)):
+    """Validates the key. If it doesn't match, it blocks the request."""
+    if api_key != CITYFOAM_SECRET_KEY:
+        raise HTTPException(status_code=403, detail="Access Denied: Invalid API Key")
+    return api_key
+
+
+# 2. Setup AI and Database Clients
 print("Loading Embedding Model...")
 embedding_model = SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2')
 
@@ -20,7 +38,8 @@ collection = chroma_client.get_collection(name="customer_support_knowledge")
 
 AZURE_ENDPOINT = "https://YOUR_RESOURCE_NAME.openai.azure.com/"
 AZURE_API_KEY = "YOUR_API_KEY"
-DEPLOYMENT_NAME = "YOUR_DEPLOYMENT_NAME"
+DEPLOYMENT_NAME = "YOUR_DEPLOYMENT_NAME" # e.g., "gpt-4o"
+
 
 print("Connecting to Azure OpenAI...")
 llm_client = AzureOpenAI(
@@ -32,9 +51,9 @@ llm_client = AzureOpenAI(
 # 3. Define the Request Data Structure
 class ChatRequest(BaseModel):
     query: str
-    language: str = "auto" # Optional flag if the frontend wants to force a language
+    language: str = "auto"
 
-# 4. The Core Generation Logic (From our Notebook)
+# 4. The Core Generation Logic
 def get_rag_response(user_query: str):
     query_vector = embedding_model.encode([user_query]).tolist()
     results = collection.query(query_embeddings=query_vector, n_results=5)
@@ -69,10 +88,11 @@ YOUR ANSWER:"""
 # 5. Define the API Endpoints
 @app.get("/")
 def health_check():
-    return {"status": "CityFoam Support API is running perfectly."}
+    return {"status": "CityFoam Support API is securely running."}
 
+# Notice the new 'Depends(verify_api_key)' parameter!
 @app.post("/chat")
-def chat_endpoint(request: ChatRequest):
+def chat_endpoint(request: ChatRequest, api_key: str = Depends(verify_api_key)):
     try:
         answer = get_rag_response(request.query)
         return {
