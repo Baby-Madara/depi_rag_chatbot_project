@@ -10,7 +10,7 @@ Build a production‑ready support automation system using Retrieval‑Augmented
 | Name | github account | contributions |
 |------|----------------|---------------|
 | Mohamed Abd El-Fattah | @      |     -                  |
-| Sarah Arafa | @      |                       |
+| Sarah Arafa | @ saraharafa     |      Milestone1&2                 |
 | Ahmed Farahat | @Baby-Madara      |   deplyment on Azure  |
 | Nora | @      |      -                 |
 | Basel | @      | -                      |
