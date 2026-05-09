@@ -8,6 +8,10 @@ from dotenv import load_dotenv
 from langchain_ollama import ChatOllama
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 
+# for fancy printing
+from pprint import pprint
+import json
+
 # Load environment variables from .env
 base_dir = os.path.dirname(os.path.abspath(__file__))
 load_dotenv(os.path.join(base_dir, ".env"))
@@ -20,7 +24,19 @@ OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "qwen2.5:3b")
 OLLAMA_BASE_URL = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
 
 # --- DATABASE (In-Memory for mock multiple users/chats) ---
-# Structure: { user_id: { chat_id: { "title": str, "messages": [ {"sender": "ai"/"user", "text": str} ] } } }
+'''
+# Structure: { 
+    user_id: 
+    { 
+        chat_id: { 
+            "title": str, 
+            "messages": [ 
+                {"sender": "ai"/"user", "text": str} 
+            ] 
+        } 
+    } 
+}
+'''
 db = {
     "guest": {}
 }
@@ -126,6 +142,7 @@ def chat_stream():
             lc_messages.append(HumanMessage(content=msg["text"]))
         elif msg["sender"] == "ai":
             lc_messages.append(AIMessage(content=msg["text"]))
+    print(f"the conversation till now is: \n{json.dumps( [msg.dict() for msg in lc_messages], indent=4)}")
 
     def generate():
         ai_response_text = ""

@@ -199,7 +199,7 @@ echo ""
 
 MY_IP=$(curl -s ifconfig.me)
 echo "Your server should now be accessible at:"
-echo "http://$MY_IP:$PORT"
+echo "http://$MY_IP:80"
 echo ""
 
 echo "========================================="
@@ -208,5 +208,5 @@ echo "To Attach to the session: screen -r chatbot"
 echo "Detach from the session (while inside): Press Ctrl+A, then D"
 echo "Stop the server: screen -S chatbot -X quit"
 echo "Check if running: screen -ls | grep chatbot"
-echo "Your server should now be accessible at: http://$MY_IP:$PORT"
+echo "Your server should now be accessible at: http://$MY_IP:80"
 echo "========================================="
