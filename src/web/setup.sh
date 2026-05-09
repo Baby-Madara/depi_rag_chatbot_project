@@ -37,7 +37,9 @@ python3-pip \
 nginx \
 git \
 screen \
-zstd 
+zstd \
+langchain-openai \
+langchain_community 
 
 echo "========================================="
 echo "Python version:"

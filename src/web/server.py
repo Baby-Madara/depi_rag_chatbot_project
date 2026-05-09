@@ -7,10 +7,19 @@ from dotenv import load_dotenv
 # Use ChatOllama for conversational memory compatibility
 from langchain_ollama import ChatOllama
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
+# from openai import AzureOpenAI but using langchain
+from langchain_openai import AzureChatOpenAI
+
+# from langchain_azure import ChatAzureAdTokenProvider
+# from azure_identity import DefaultAzureCredential
+
 
 # for fancy printing
 from pprint import pprint
 import json
+import warnings
+
+print("lm1")
 
 # Load environment variables from .env
 base_dir = os.path.dirname(os.path.abspath(__file__))
@@ -19,9 +28,20 @@ load_dotenv(os.path.join(base_dir, ".env"))
 app = Flask(__name__, static_folder=base_dir, static_url_path='')
 
 PORT = int(os.environ.get("PORT", 8000))
-LLM_PROVIDER = os.environ.get("LLM_PROVIDER", "ollama")
-OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "qwen2.5:3b")
-OLLAMA_BASE_URL = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
+
+LLM_PROVIDER = os.environ.get("LLM_PROVIDER", "ollama") # "ollama" or "azure"
+
+# if ollama llm
+if LLM_PROVIDER == "ollama":
+    OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "qwen2.5:3b")
+    OLLAMA_BASE_URL = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
+
+# if azure llm
+elif LLM_PROVIDER == "azure":
+    AZURE_BASE_URL = os.environ.get("AZURE_BASE_URL", "https://llm-server-depi.openai.azure.com/")
+    AZURE_API_KEY = os.environ.get("AZURE_API_KEY", "azure_api_key_not_found")
+    AZURE_API_VERSION = os.environ.get("AZURE_API_VERSION", "2024-02-15-preview")
+    AZURE_DEPLOYMENT_NAME = os.environ.get("AZURE_DEPLOYMENT_NAME", "gpt-4o")
 
 # --- DATABASE (In-Memory for mock multiple users/chats) ---
 '''
@@ -47,8 +67,19 @@ if LLM_PROVIDER == "ollama":
         model=OLLAMA_MODEL,
         base_url=OLLAMA_BASE_URL,
     )
+elif LLM_PROVIDER == "azure":
+    llm = AzureChatOpenAI(
+        deployment_name=AZURE_DEPLOYMENT_NAME,
+        api_version=AZURE_API_VERSION,
+        azure_endpoint=AZURE_BASE_URL,
+        api_key=AZURE_API_KEY,
+    )
+    
 else:
     llm = None
+    warnings.warn(f"Unsupported LLM_PROVIDER: {LLM_PROVIDER}")
+
+
 
 # --- ROUTES ---
 @app.route('/')
