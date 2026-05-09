@@ -37,9 +37,7 @@ python3-pip \
 nginx \
 git \
 screen \
-zstd \
-langchain-openai \
-langchain_community 
+zstd 
 
 echo "========================================="
 echo "Python version:"
@@ -54,7 +52,9 @@ echo "========================================="
 pip3 install --break-system-packages \
 flask \
 gunicorn \
-python-dotenv 
+python-dotenv \
+langchain-openai \
+langchain_community 
 
 if [ -f "$APP_DIR/requirements.txt" ]; then
 pip3 install --break-system-packages -r "$APP_DIR/requirements.txt"

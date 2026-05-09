@@ -62,26 +62,26 @@ def normalize_arabic(text: str) -> str:
 def get_rag_response(user_query: str) -> str:
     clean_query = normalize_arabic(user_query)
 
-    # The Query Optimizer: Strips chatty text and fixes catalog typos
-    optimizer_prompt = f"""You are a search engine query optimizer. Extract the core product name and features from the user's query.
-    - Remove conversational filler.
-    - FIX TYPOS: Compare the user's query against this official catalog: {VALID_CATALOG}
-    Output ONLY the raw, corrected keywords for the database search."""
+    # # The Query Optimizer: Strips chatty text and fixes catalog typos
+    # optimizer_prompt = f"""You are a search engine query optimizer. Extract the core product name and features from the user's query.
+    # - Remove conversational filler.
+    # - FIX TYPOS: Compare the user's query against this official catalog: {VALID_CATALOG}
+    # Output ONLY the raw, corrected keywords for the database search."""
     
-    try:
-        optimized_query = llm_client.chat.completions.create(
-            model=Config.AZURE_DEPLOYMENT_NAME,
-            messages=[
-                {"role": "system", "content": optimizer_prompt},
-                {"role": "user", "content": clean_query}
-            ],
-            temperature=0.0
-        ).choices[0].message.content
-    except Exception:
-        optimized_query = clean_query # Fallback if optimizer fails
+    # try:
+    #     optimized_query = llm_client.chat.completions.create(
+    #         model=Config.AZURE_DEPLOYMENT_NAME,
+    #         messages=[
+    #             {"role": "system", "content": optimizer_prompt},
+    #             {"role": "user", "content": clean_query}
+    #         ],
+    #         temperature=0.0
+    #     ).choices[0].message.content
+    # except Exception:
+    #     optimized_query = clean_query # Fallback if optimizer fails
 
     # Retrieve Context from Vector DB
-    query_vector = embedding_model.encode([optimized_query]).tolist()
+    query_vector = embedding_model.encode([clean_query]).tolist()
     results = collection.query(query_embeddings=query_vector, n_results=5)
     
     context_string = "\n\n".join(results['documents'][0])
@@ -104,7 +104,7 @@ KNOWLEDGE BASE CONTEXT:
         model=Config.AZURE_DEPLOYMENT_NAME,
         messages=[
             {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_query} # Use original query so it sounds natural
+            {"role": "user", "content": clean_query} # Use original query so it sounds natural
         ],
         temperature=0.0
     )
