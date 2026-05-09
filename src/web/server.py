@@ -161,6 +161,72 @@ def chat_stream():
     # Save user message to history
     history.append({"sender": "user", "text": user_message})
 
+
+
+    ####################### -- RAG LOGIC STARTS HERE -- #######################
+    # 1. Normalize Query
+    from ingest import normalize_arabic
+    clean_query = normalize_arabic(user_message)
+    
+    # 2. qwery vector from the cleaned query and retrieve relevant contexts from ChromaDB
+    from sentence_transformers import SentenceTransformer
+    embedding_model = SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2')
+    query_vector    = embedding_model.encode([clean_query]).tolist()
+    results         = collection.query(query_embeddings=query_vector, n_results=5)
+    context_string = "\n\n".join(results['documents'][0])
+
+
+    # TODO: add conversation history here in the prompt for better context awareness. Be mindful of token limits.
+    # add the conversation in a clean way from history like:
+    # USER: {{user_message}}
+    # AI: {{ai_message}}
+    # USER: {{user_message}}
+    # AI: {{ai_message}}...
+    # and if it is long, just show the first two messages then "..." then last 8 messages
+    # Convert history into clean conversation text for the prompt
+
+    MAX_LAST_MESSAGES = 8
+
+    if len(history) <= 10:
+        selected_history = history
+    else:
+        # first 2 + last 8
+        selected_history = history[:2] + [{"sender": "...", "text": "..."}] + history[-MAX_LAST_MESSAGES:]
+
+    conversation_text = []
+
+    for msg in selected_history:
+        sender = msg["sender"]
+        text = msg["text"]
+
+        if sender == "user":
+            conversation_text.append(f"USER: {text}")
+        elif sender == "ai":
+            conversation_text.append(f"AI: {text}")
+        else:
+            conversation_text.append("...")
+
+    history_prompt = "\n".join(conversation_text)
+
+    # 3. Construct system prompt with retrieved context
+    system_prompt = f"""You are the official Customer Support AI Assistant for CityFoam. 
+Your primary function is to provide accurate, helpful answers based STRICTLY on the official Knowledge Base provided below.
+
+CRITICAL RULES:
+1. ZERO HALLUCINATION: You must only use facts stated in the 'KNOWLEDGE BASE CONTEXT'. 
+2. UNKNOWN ANSWERS: If the answer cannot be found, politely state that you do not have that information and offer to transfer them to a human agent.
+3. STRICT BILINGUAL MATCHING: You must reply in the EXACT SAME LANGUAGE as the user's question. 
+4. FIX TYPOS: The context is extracted from PDFs and may contain OCR typos. Correct them gracefully.
+
+KNOWLEDGE BASE CONTEXT:
+{context_string}
+
+the conversation till now is:
+{history_prompt}
+"""
+    print(f"🛑🛑🛑🛑🛑🛑🛑🛑🛑🛑\nsystem_prompt:\n\n{system_prompt}\n🛑🛑🛑🛑🛑🛑🛑🛑🛑🛑\n")
+    
+    
     # Prepare Context-Aware LangChain Messages
     lc_messages = [
         SystemMessage(content=f"You are a helpful and professional assistant for {os.environ.get('COMPANY_NAME', 'our company')}.")
@@ -179,7 +245,7 @@ def chat_stream():
         ai_response_text = ""
         try:
             # Stream the response chunk by chunk from LangChain Chat Model
-            for chunk in llm.stream(lc_messages):
+            for chunk in llm.stream(system_prompt):
                 content = chunk.content
                 if content:
                     ai_response_text += content

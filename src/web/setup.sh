@@ -37,7 +37,10 @@ python3-pip \
 nginx \
 git \
 screen \
-zstd 
+zstd \
+ghostscript \
+python3-tk \
+libglib2.0-0 
 
 echo "========================================="
 echo "Python version:"
@@ -54,7 +57,11 @@ flask \
 gunicorn \
 python-dotenv \
 langchain-openai \
-langchain_community 
+langchain_community \
+pandas \
+chromadb \
+"camelot-py[cv]" \
+chromadb[duckdb+parquet] \
 
 if [ -f "$APP_DIR/requirements.txt" ]; then
 pip3 install --break-system-packages -r "$APP_DIR/requirements.txt"
@@ -62,6 +69,7 @@ else
 echo "WARNING: requirements.txt not found"
 fi
 
+# whether to use ollama or azure openai depends on .env config file
 
 echo "========================================="
 echo "Checking Ollama installation..."
@@ -86,6 +94,15 @@ echo "Pulling model (if not exists)..."
 echo "========================================="
 
 ollama list | grep -q "qwen2.5:3b" || ollama pull qwen2.5:3b
+
+echo "========================================="
+echo "Prepare the RAG DB..."
+echo "========================================="
+
+# Run the ingest.py script to populate the vector database
+
+echo "-----------------------------------------"
+echo ""
 
 echo "========================================="
 echo "Restarting chatbot service..."
