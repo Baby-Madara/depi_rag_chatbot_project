@@ -37,7 +37,10 @@ python3-pip \
 nginx \
 git \
 screen \
-zstd 
+zstd \
+ghostscript \
+python3-tk \
+libglib2.0-0 
 
 echo "========================================="
 echo "Python version:"
@@ -52,7 +55,13 @@ echo "========================================="
 pip3 install --break-system-packages \
 flask \
 gunicorn \
-python-dotenv 
+python-dotenv \
+langchain-openai \
+langchain_community \
+pandas \
+chromadb \
+"camelot-py[cv]" \
+chromadb[duckdb+parquet] \
 
 if [ -f "$APP_DIR/requirements.txt" ]; then
 pip3 install --break-system-packages -r "$APP_DIR/requirements.txt"
@@ -60,6 +69,7 @@ else
 echo "WARNING: requirements.txt not found"
 fi
 
+# whether to use ollama or azure openai depends on .env config file
 
 echo "========================================="
 echo "Checking Ollama installation..."
@@ -84,6 +94,15 @@ echo "Pulling model (if not exists)..."
 echo "========================================="
 
 ollama list | grep -q "qwen2.5:3b" || ollama pull qwen2.5:3b
+
+echo "========================================="
+echo "Prepare the RAG DB..."
+echo "========================================="
+
+# Run the ingest.py script to populate the vector database
+
+echo "-----------------------------------------"
+echo ""
 
 echo "========================================="
 echo "Restarting chatbot service..."
@@ -199,7 +218,7 @@ echo ""
 
 MY_IP=$(curl -s ifconfig.me)
 echo "Your server should now be accessible at:"
-echo "http://$MY_IP:$PORT"
+echo "http://$MY_IP:80"
 echo ""
 
 echo "========================================="
@@ -208,5 +227,5 @@ echo "To Attach to the session: screen -r chatbot"
 echo "Detach from the session (while inside): Press Ctrl+A, then D"
 echo "Stop the server: screen -S chatbot -X quit"
 echo "Check if running: screen -ls | grep chatbot"
-echo "Your server should now be accessible at: http://$MY_IP:$PORT"
+echo "Your server should now be accessible at: http://$MY_IP:80"
 echo "========================================="

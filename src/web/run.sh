@@ -76,6 +76,8 @@ echo "========================================="
 
 sudo systemctl restart nginx
 
+# whether to use ollama or azure openai depends on .env config file
+
 echo "========================================="
 echo "Starting Ollama service..."
 echo "========================================="
@@ -90,6 +92,16 @@ echo "========================================="
 ollama list | grep -q "qwen2.5:3b" || ollama pull qwen2.5:3b
 
 echo "========================================="
+echo "Prepare the RAG DB..."
+echo "========================================="
+
+# Run the ingest script to populate the vector database
+
+echo "-----------------------------------------"
+
+echo ""
+
+echo "========================================="
 echo "Starting chatbot server in background..."
 echo "========================================="
 
@@ -98,8 +110,6 @@ screen -dmS chatbot python3 server.py
 echo "========================================="
 echo "DONE!"
 echo "========================================="
-
-echo ""
 
 echo "Useful commands:"
 
