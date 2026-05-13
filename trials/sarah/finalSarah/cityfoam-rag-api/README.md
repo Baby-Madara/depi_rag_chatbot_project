@@ -33,4 +33,30 @@ An enterprise-grade Retrieval-Augmented Generation (RAG) pipeline and API built 
 **2. Create and activate a virtual environment:**
 ```bash
 python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+# On Windows:
+venv\Scripts\activate
+# On Mac/Linux:
+source venv/bin/activate
+
+**3. Install dependencies:**
+pip install -r requirements.txt
+
+**4. Configure Environment Variables:**
+#copy and fill in you secure credentials
+cp .env.example .env
+
+##USage
+
+**Step 1: Ingest Data through
+python src/ingest.py
+**Step 2: Run the API
+#If you want to run the FASTAPI Server use:
+uvicorn src.api:app --host 0.0.0.0 --port 8000
+#To use the Built-in Swagger UI at the localhost/docs or via Postman:
+curl -X POST "http://localhost:8000/chat" \
+     -H "X-API-Key: your_secure_api_key_here" \
+     -H "Content-Type: application/json" \
+     -d '{"query": "أين يوجد فرعكم في الإسكندرية؟"}'
+
+***
+###Done
