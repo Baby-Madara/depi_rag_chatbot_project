@@ -1,6 +1,8 @@
 import re
 from fastapi import FastAPI, HTTPException, Security, Depends
 from fastapi.security import APIKeyHeader
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 import chromadb
 from sentence_transformers import SentenceTransformer
@@ -41,8 +43,12 @@ llm_client = AzureOpenAI(
 # ==========================================
 # 3. HELPER FUNCTIONS & DATA STRUCTURES
 # ==========================================
+class ChatMessage(BaseModel):
+    role: str      # Either "user" or "assistant"
+    content: str   # The text of the message
 class ChatRequest(BaseModel):
     query: str
+    history: list[ChatMessage] = [] 
     language: str = "auto"
 
 # Catalog used by the LLM to fix OCR typos
@@ -59,53 +65,65 @@ def normalize_arabic(text: str) -> str:
 # ==========================================
 # 4. RAG LOGIC
 # ==========================================
-def get_rag_response(user_query: str) -> str:
+# ==========================================
+# 4. RAG LOGIC (Now with Language Lock!)
+# ==========================================
+def get_rag_response(user_query: str, history: list) -> str:
     clean_query = normalize_arabic(user_query)
 
-    # # The Query Optimizer: Strips chatty text and fixes catalog typos
-    # optimizer_prompt = f"""You are a search engine query optimizer. Extract the core product name and features from the user's query.
-    # - Remove conversational filler.
-    # - FIX TYPOS: Compare the user's query against this official catalog: {VALID_CATALOG}
-    # Output ONLY the raw, corrected keywords for the database search."""
-    
-    # try:
-    #     optimized_query = llm_client.chat.completions.create(
-    #         model=Config.AZURE_DEPLOYMENT_NAME,
-    #         messages=[
-    #             {"role": "system", "content": optimizer_prompt},
-    #             {"role": "user", "content": clean_query}
-    #         ],
-    #         temperature=0.0
-    #     ).choices[0].message.content
-    # except Exception:
-    #     optimized_query = clean_query # Fallback if optimizer fails
+    # NEW: Detect if the user is typing in Arabic using Regex
+    is_arabic = bool(re.search(r'[\u0600-\u06FF]', user_query))
+    target_language = "ARABIC" if is_arabic else "ENGLISH"
 
-    # Retrieve Context from Vector DB
-    query_vector = embedding_model.encode([clean_query]).tolist()
-    results = collection.query(query_embeddings=query_vector, n_results=5)
+    # 1. Optimize the search query
+    optimizer_prompt = f"""You are a search engine query optimizer. Extract the core product name and features from the user's query.
+    - Remove conversational filler.
+    - FIX TYPOS: Compare the user's query against this official catalog: {VALID_CATALOG}
+    Output ONLY the raw, corrected keywords for the database search."""
     
+    try:
+        optimized_query = llm_client.chat.completions.create(
+            model=Config.AZURE_DEPLOYMENT_NAME,
+            messages=[
+                {"role": "system", "content": optimizer_prompt},
+                {"role": "user", "content": clean_query}
+            ],
+            temperature=0.0
+        ).choices[0].message.content
+    except Exception:
+        optimized_query = clean_query
+
+    # 2. Retrieve Context
+    query_vector = embedding_model.encode([optimized_query]).tolist()
+    results = collection.query(query_embeddings=query_vector, n_results=5)
     context_string = "\n\n".join(results['documents'][0])
         
-    # Generate the Final Answer
+    # 3. Generate Final Answer with History & Language Lock
     system_prompt = f"""You are the official Customer Support AI Assistant for CityFoam. 
 Your primary function is to provide accurate, helpful answers based STRICTLY on the official Knowledge Base provided below.
 
 CRITICAL RULES:
 1. ZERO HALLUCINATION: You must only use facts stated in the 'KNOWLEDGE BASE CONTEXT'. 
-2. UNKNOWN ANSWERS: If the answer cannot be found, politely state that you do not have that information and offer to transfer them to a human agent.
-3. STRICT BILINGUAL MATCHING: You must reply in the EXACT SAME LANGUAGE as the user's question. 
-4. FIX TYPOS: The context is extracted from PDFs and may contain OCR typos. Correct them gracefully.
+2. UNKNOWN ANSWERS: If the answer cannot be found, politely state that you do not have that information.
+3. LANGUAGE LOCK: You MUST write your ENTIRE reply strictly in {target_language}. Even if the knowledge base context is in a different language, you must translate your final answer to {target_language} and NEVER mix languages.
+4. CONTEXT AWARENESS: Use the previous conversation history to understand pronouns or follow-up questions.
 
 KNOWLEDGE BASE CONTEXT:
 {context_string}
 """
+    # Build the message chain: System -> Past History -> New Query
+    messages = [{"role": "system", "content": system_prompt}]
+    
+    # Add previous chat history
+    for msg in history:
+        messages.append({"role": msg.role, "content": msg.content})
+        
+    # Add the current user question
+    messages.append({"role": "user", "content": user_query})
 
     response = llm_client.chat.completions.create(
         model=Config.AZURE_DEPLOYMENT_NAME,
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": clean_query} # Use original query so it sounds natural
-        ],
+        messages=messages,
         temperature=0.0
     )
     return response.choices[0].message.content
@@ -113,16 +131,24 @@ KNOWLEDGE BASE CONTEXT:
 # ==========================================
 # 5. API ENDPOINTS
 # ==========================================
+app.mount("/static", StaticFiles(directory="static"), name="static")
+@app.get("/favicon.ico", include_in_schema=False)
+def favicon():
+    return FileResponse("static/favicon.ico")
 @app.get("/")
-def health_check():
-    """Simple endpoint to verify the API is running."""
-    return {"status": "CityFoam Support API is securely running."}
+def serve_ui():
+    return FileResponse("static/index.html")
+# def health_check():
+#     """Simple endpoint to verify the API is running."""
+#     return {"status": "CityFoam Support API is securely running."}
 
-@app.post("/chat")
-def chat_endpoint(request: ChatRequest, api_key: str = Depends(verify_api_key)):
+@app.post("/api/chat")
+# def chat_endpoint(request: ChatRequest, api_key: str = Depends(verify_api_key)):
+def chat_endpoint(request: ChatRequest):
     """Main chat endpoint that processes the RAG pipeline."""
     try:
-        answer = get_rag_response(request.query)
+        # Notice we are passing BOTH the query and the history here!
+        answer = get_rag_response(request.query, request.history)
         return {
             "status": "success",
             "query": request.query,
