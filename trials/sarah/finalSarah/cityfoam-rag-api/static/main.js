@@ -65,18 +65,33 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function appendMessage(sender, text) {
         const messageDiv = document.createElement('div');
-        // Your friend's CSS uses 'ai' instead of 'bot', so we adjust it here:
         const cssClass = sender === 'bot' ? 'ai' : sender; 
         messageDiv.classList.add('message', cssClass);
         
         const contentDiv = document.createElement('div');
         contentDiv.classList.add('content');
-        contentDiv.textContent = text;
         
         messageDiv.appendChild(contentDiv);
         messagesContainer.appendChild(messageDiv);
         
-        
-        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        if (sender === 'bot') {
+            contentDiv.textContent = ''; 
+            let i = 0;
+            const typingSpeed = 15;
+
+            function typeWriter() {
+                if (i < text.length) {
+                    contentDiv.textContent += text.charAt(i);
+                    i++;
+                    messagesContainer.scrollTop = messagesContainer.scrollHeight;
+                    setTimeout(typeWriter, typingSpeed);
+                }
+            }
+            typeWriter();
+            
+        } else {
+            contentDiv.textContent = text;
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        }
     }
 });
