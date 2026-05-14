@@ -1,6 +1,7 @@
 # CityFoam RAG Customer Support API Hierarichy:
 
 cityfoam-rag-api/
+
 │
 ├── data/                   
 ├── chroma_db/             
