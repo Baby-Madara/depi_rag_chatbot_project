@@ -7,19 +7,14 @@ Build a production‑ready support automation system using Retrieval‑Augmented
 
 ## Members
 
-| Name | github account | contributions |
-|------|----------------|---------------|
-| Mohamed Abd El-Fattah | @      |     -                  |
-| Sarah Arafa | @ saraharafa     | Ingestion, Semantic Search & Embeddings | 
-Contextual Retrieval(OpenAI Azure)|
-Docker|ACR|Web App Service
-| Ahmed Farahat | @Baby-Madara      |   deployment on Azure  | 
-docker | ACR | UI/Frontend | 
-Web App Service
-| Nora | @      |      -                 |
-| Basel | @      | -                      |
-| Mahmoud Osama Ahmed | @      |   -                    |
-
+| Name | GitHub Account | Contributions |
+| :--- | :--- | :--- |
+| **Mohamed Abd El-Fattah** | @ | - |
+| **Sarah Arafa** | @saraharafa | • Ingestion, Semantic Search & Embeddings<br>• Contextual Retrieval (OpenAI Azure)<br>• Docker<br>• ACR<br>• Web App Service |
+| **Ahmed Farahat** | @Baby-Madara | • Deployment on Azure<br>• Docker<br>• ACR<br>• UI/Frontend<br>• Web App Service |
+| **Nora** | @ | - |
+| **Basel** | @ | - |
+| **Mahmoud Osama Ahmed** | @ | - |
 
 ## System Architecture
 To e discussed later
