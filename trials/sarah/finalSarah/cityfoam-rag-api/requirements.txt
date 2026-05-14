@@ -6,3 +6,10 @@ sentence-transformers>=2.6.1
 openai>=1.14.2
 python-dotenv>=1.0.1
 torch>=2.2.0
+langchain
+langchain-community
+faiss-cpu
+pypdf
+pandas
+openpyxl
+python-docx
