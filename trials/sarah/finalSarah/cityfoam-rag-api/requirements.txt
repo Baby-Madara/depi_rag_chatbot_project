@@ -1,22 +1,8 @@
-# API Framework
 fastapi>=0.110.0
 uvicorn>=0.29.0
 pydantic>=2.6.4
-pydantic-settings>=2.2.1
-
-# AI & Vector Database
-openai>=1.14.2
 chromadb>=0.4.24
 sentence-transformers>=2.6.1
-
-# Data Ingestion & Processing
-unstructured[pdf,docx]>=0.22.0
-langchain-text-splitters>=0.0.1
-pandas>=2.2.1
-openpyxl>=3.1.2
-pypdf>=4.0.0,<6.0.0
-camelot-py[cv]>=1.0.9
-tabulate>=0.9.0
-
-# Utilities
+openai>=1.14.2
 python-dotenv>=1.0.1
+torch>=2.2.0
