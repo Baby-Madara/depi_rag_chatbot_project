@@ -10,8 +10,8 @@ Build a production‑ready support automation system using Retrieval‑Augmented
 | Name | github account | contributions |
 |------|----------------|---------------|
 | Mohamed Abd El-Fattah | @      |     -                  |
-| Sarah Arafa | @ saraharafa     | Ingestion Pipeline + Semantic Search & Embeddings + Contextual Retrieval + Azure Openai llm|Docker image
-| Ahmed Farahat | @Baby-Madara      |   deplyment on Azure  |
+| Sarah Arafa | @ saraharafa     | Ingestion, Semantic Search & Embeddings | Contextual Retrieval(OpenAI Azure)|Docker|ACR|Web App Service
+| Ahmed Farahat | @Baby-Madara      |   deployment on Azure  | docker | ACR | UI/Frontend | Web App Service
 | Nora | @      |      -                 |
 | Basel | @      | -                      |
 | Mahmoud Osama Ahmed | @      |   -                    |
