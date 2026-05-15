@@ -1,4 +1,5 @@
 import re
+import os
 from fastapi import FastAPI, HTTPException, Security, Depends
 from fastapi.security import APIKeyHeader
 from fastapi.staticfiles import StaticFiles
@@ -27,12 +28,17 @@ def verify_api_key(api_key: str = Security(api_key_header)):
 # 2. SETUP AI AND DATABASE CLIENTS
 # ==========================================
 embedding_model = SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2')
-chroma_client = chromadb.PersistentClient(path=Config.CHROMA_DB_DIR)
+
+# تعديل DevOps: التأكد من مسار قاعدة البيانات جوه الحاوية
+db_path = os.getenv("CHROMA_DB_DIR", Config.CHROMA_DB_DIR)
+chroma_client = chromadb.PersistentClient(path=db_path)
 
 try:
     collection = chroma_client.get_collection(name=Config.COLLECTION_NAME)
 except ValueError:
-    raise RuntimeError(f"Collection '{Config.COLLECTION_NAME}' not found. Please run ingest.py first.")
+    # تعديل بسيط لضمان عدم توقف السيرفر إذا كانت الـ DB فارغة في أول مرة للـ Docker
+    print(f"Warning: Collection '{Config.COLLECTION_NAME}' not found.")
+    collection = None 
 
 llm_client = AzureOpenAI(
     azure_endpoint=Config.AZURE_ENDPOINT,
@@ -46,16 +52,15 @@ llm_client = AzureOpenAI(
 class ChatMessage(BaseModel):
     role: str      # Either "user" or "assistant"
     content: str   # The text of the message
+
 class ChatRequest(BaseModel):
     query: str
     history: list[ChatMessage] = [] 
     language: str = "auto"
 
-# Catalog used by the LLM to fix OCR typos
 VALID_CATALOG = ["بيرلا بوكيت", "أريجاتو", "هيفين", "ريفيرا", "برنسيسة", "نيو ماريوت", "كوين"]
 
 def normalize_arabic(text: str) -> str:
-    """Standardizes Arabic characters to eliminate common spelling mismatches."""
     text = re.sub(r'[أإآ]', 'ا', text)
     text = re.sub(r'ة', 'ه', text)
     text = re.sub(r'ى', 'ي', text)
@@ -65,17 +70,14 @@ def normalize_arabic(text: str) -> str:
 # ==========================================
 # 4. RAG LOGIC
 # ==========================================
-# ==========================================
-# 4. RAG LOGIC (Now with Language Lock!)
-# ==========================================
 def get_rag_response(user_query: str, history: list) -> str:
+    if collection is None:
+        return "عذراً، نظام البيانات قيد التحديث حالياً."
+        
     clean_query = normalize_arabic(user_query)
-
-    # NEW: Detect if the user is typing in Arabic using Regex
     is_arabic = bool(re.search(r'[\u0600-\u06FF]', user_query))
     target_language = "ARABIC" if is_arabic else "ENGLISH"
 
-    # 1. Optimize the search query
     optimizer_prompt = f"""You are a search engine query optimizer. Extract the core product name and features from the user's query.
     - Remove conversational filler.
     - FIX TYPOS: Compare the user's query against this official catalog: {VALID_CATALOG}
@@ -93,32 +95,22 @@ def get_rag_response(user_query: str, history: list) -> str:
     except Exception:
         optimized_query = clean_query
 
-    # 2. Retrieve Context
     query_vector = embedding_model.encode([optimized_query]).tolist()
     results = collection.query(query_embeddings=query_vector, n_results=5)
     context_string = "\n\n".join(results['documents'][0])
         
-    # 3. Generate Final Answer with History & Language Lock
     system_prompt = f"""You are the official Customer Support AI Assistant for CityFoam. 
 Your primary function is to provide accurate, helpful answers based STRICTLY on the official Knowledge Base provided below.
-
 CRITICAL RULES:
-1. ZERO HALLUCINATION: You must only use facts stated in the 'KNOWLEDGE BASE CONTEXT'. 
-2. UNKNOWN ANSWERS: If the answer cannot be found, politely state that you do not have that information.
-3. LANGUAGE LOCK: You MUST write your ENTIRE reply strictly in {target_language}. Even if the knowledge base context is in a different language, you must translate your final answer to {target_language} and NEVER mix languages.
-4. CONTEXT AWARENESS: Use the previous conversation history to understand pronouns or follow-up questions.
-
+1. ZERO HALLUCINATION.
+2. UNKNOWN ANSWERS: Polite refusal.
+3. LANGUAGE LOCK: {target_language}.
 KNOWLEDGE BASE CONTEXT:
 {context_string}
 """
-    # Build the message chain: System -> Past History -> New Query
     messages = [{"role": "system", "content": system_prompt}]
-    
-    # Add previous chat history
     for msg in history:
         messages.append({"role": msg.role, "content": msg.content})
-        
-    # Add the current user question
     messages.append({"role": "user", "content": user_query})
 
     response = llm_client.chat.completions.create(
@@ -131,23 +123,22 @@ KNOWLEDGE BASE CONTEXT:
 # ==========================================
 # 5. API ENDPOINTS
 # ==========================================
+# ملاحظة DevOps: التأكد من وجود فولدر static
+if not os.path.exists("static"):
+    os.makedirs("static")
+
 app.mount("/static", StaticFiles(directory="static"), name="static")
-@app.get("/favicon.ico", include_in_schema=False)
-def favicon():
-    return FileResponse("static/favicon.ico")
+
 @app.get("/")
 def serve_ui():
-    return FileResponse("static/index.html")
-# def health_check():
-#     """Simple endpoint to verify the API is running."""
-#     return {"status": "CityFoam Support API is securely running."}
+    index_path = os.path.join("static", "index.html")
+    if os.path.exists(index_path):
+        return FileResponse(index_path)
+    return {"message": "CityFoam API is running. UI file not found in static/"}
 
 @app.post("/api/chat")
-# def chat_endpoint(request: ChatRequest, api_key: str = Depends(verify_api_key)):
-def chat_endpoint(request: ChatRequest):
-    """Main chat endpoint that processes the RAG pipeline."""
+async def chat_endpoint(request: ChatRequest):
     try:
-        # Notice we are passing BOTH the query and the history here!
         answer = get_rag_response(request.query, request.history)
         return {
             "status": "success",
