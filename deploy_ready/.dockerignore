@@ -1,0 +1,16 @@
+# Ignore local environment and cache
+__pycache__/
+*.pyc
+venv/
+.env
+.git
+.vscode
+.gitignore
+
+# Ignore local DB data to allow fresh ingestion or volume mounting
+chroma_db/
+
+# Ignore documentation/logs
+progress-log.md
+ToDo.md
+README.md

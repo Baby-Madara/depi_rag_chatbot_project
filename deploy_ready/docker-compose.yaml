@@ -1,0 +1,20 @@
+services:
+  rag-chatbot:
+    build: .
+    container_name: cityfoam_container
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    volumes:
+      # Persistent storage for the Vector Database
+      - ./chroma_db:/app/chroma_db
+      # Mount knowledge base files if they are updated externally
+#      - ./knowledge_base.md:/app/knowledge_base.md
+#      - ./zbranches.xlsx - Sheet1.csv:/app/zbranches.xlsx - Sheet1.csv
+    restart: always
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
