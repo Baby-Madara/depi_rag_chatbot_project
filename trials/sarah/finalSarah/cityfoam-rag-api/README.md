@@ -1,5 +1,16 @@
 # CityFoam RAG Customer Support API Hierarichy:
 
+## Members
+
+| Name | GitHub Account | Contributions |
+| :--- | :--- | :--- |
+| **Mohamed Abd El-Fattah** | @ | - |
+| **Sarah Arafa** | @saraharafa | • Ingestion, Semantic Search & Embeddings<br>• Contextual Retrieval (OpenAI Azure)<br>• Docker<br>• ACR<br>• Web App Service |
+| **Ahmed Farahat** | @Baby-Madara | • Deployment on Azure<br>• Docker<br>• ACR<br>• UI/Frontend<br>• Web App Service |
+| **Nora** | @ | - |
+| **Basel** | @ | - |
+| **Mahmoud Osama Ahmed** | @ | - |
+
 cityfoam-rag-api/
 
 │
