@@ -4,4 +4,16 @@ pydantic>=2.6.4
 chromadb>=0.4.24
 sentence-transformers>=2.6.1
 openai>=1.14.2
+<<<<<<< HEAD
 python-dotenv>=1.0.1
+=======
+python-dotenv>=1.0.1
+torch>=2.2.0
+langchain
+langchain-community
+faiss-cpu
+pypdf
+pandas
+openpyxl
+python-docx
+>>>>>>> 429f639583ceeb110940d30f3ae8db3154ad177a
