@@ -1,36 +1,51 @@
-# Use an official lightweight Python runtime as a parent image
+# =============================================================================
+# CityFoam RAG Chatbot — Dockerfile
+# =============================================================================
+# Build:  docker build -t cityfoam-rag .
+# Run:    docker compose up
+# =============================================================================
+
 FROM python:3.11-slim
 
-# Set environment variables to prevent Python from writing .pyc files and buffering stdout
-ENV PYTHONDONTWRITEBYTECODE 1
-ENV PYTHONUNBUFFERED 1
-
-# Install system dependencies required for PDF processing and Vector DB
-RUN apt-get update && apt-get install -y \
-    build-essential \
-    libglib2.0-0 \
-    curl \
+# ── System dependencies ───────────────────────────────────────────────────
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        build-essential \
+        curl \
+        libmagic1 \
+        poppler-utils \
+        tesseract-ocr \
     && rm -rf /var/lib/apt/lists/*
 
-# Set the working directory in the container
 WORKDIR /app
 
-# Copy only the requirements file first to leverage Docker cache
+# ── Python dependencies (cached layer) ───────────────────────────────────
 COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
 
-# Install uv for faster pip installs in Docker builds
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+# ── Application source ────────────────────────────────────────────────────
+COPY config.py ingest.py server.py ./
 
-# Install Python dependencies
-RUN --mount=type=cache,target=/root/.cache/uv \
-    uv pip install --system -r requirements.txt
-    
-# Copy the rest of the application code
-COPY . .
+# ── Frontend (served as Flask static files) ──────────────────────────────
+RUN mkdir -p static
+COPY static/index.html static/
+COPY static/style.css  static/
+COPY static/main.js    static/
 
-# Expose the port the Flask app runs on (matching your .env)
+# ── Knowledge-base data files ─────────────────────────────────────────────
+# All files in ./data/ will be ingested on first startup.
+RUN mkdir -p data
+COPY data/knowledge_base.md data/
+COPY data/zbranches.xlsx    data/
+COPY data/refundpolicy.docx data/
+
+# ── Persistent ChromaDB directory (overridden by volume mount) ────────────
+RUN mkdir -p chroma_db
+
+# ── Entrypoint ────────────────────────────────────────────────────────────
+COPY entrypoint.sh .
+RUN chmod +x entrypoint.sh
+
 EXPOSE 8000
 
-# Script to run ingestion before starting the server
-# This ensures the Vector DB is ready on startup
-CMD ["sh", "-c", "python ingest.py && gunicorn -w 4 -b 0.0.0.0:8000 server:app"]
+# gunicorn is started by entrypoint.sh after ingest check
+CMD ["./entrypoint.sh"]
