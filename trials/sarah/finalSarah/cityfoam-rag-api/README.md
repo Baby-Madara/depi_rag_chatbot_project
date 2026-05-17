@@ -1,10 +1,4 @@
-Not a problem! We can easily scrub that out to keep the repository looking as clean and production-ready as possible.
 
-Here is the updated `README.md` with the `debug_camelot.py` file completely removed from the directory structure.
-
----
-
-```markdown
 # CityFoam Interactive RAG Support System
 
 An enterprise-grade Retrieval-Augmented Generation (RAG) pipeline and interactive web interface built to handle customer support inquiries for CityFoam. This system ingests mixed-format corporate data (PDFs, Excel, Word), processes it into vector embeddings, and serves a bilingual (Arabic/English) chatbot powered by Azure OpenAI. 
@@ -167,7 +161,3 @@ docker run -p 8000:8000 --env-file .env cityfoam-api
 2. **Colloquial Arabic Intent Mapping:** Implemented an LLM query optimizer to handle the gap between conversational Egyptian Arabic ("بكام المرتبة دي") and formal database keywords ("السعر", "مرتبة"), dramatically increasing retrieval accuracy.
 3. **Vector Space Validation:** Conducted Principal Component Analysis (PCA) on the ChromaDB embeddings to visually verify semantic clustering, ensuring product catalogs, legal policies, and geographic branch locations were strictly isolated in the vector space to prevent context bleed.
 4. **Optimized Cloud Deployment:** Successfully navigated deployment limits by configuring the Dockerfile to bypass standard PyTorch installations in favor of optimized CPU wheels, allowing the heavy NLP models to run efficiently within Azure Web App constraints.
-
-```
-
-```
