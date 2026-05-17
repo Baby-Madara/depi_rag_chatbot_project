@@ -51,8 +51,6 @@ class ChatRequest(BaseModel):
     history: list[ChatMessage] = [] 
     language: str = "auto"
 
-# Catalog used by the LLM to fix OCR typos
-VALID_CATALOG = ["بيرلا بوكيت", "أريجاتو", "هيفين", "ريفيرا", "برنسيسة", "نيو ماريوت", "كوين"]
 
 def normalize_arabic(text: str) -> str:
     """Standardizes Arabic characters to eliminate common spelling mismatches."""
@@ -68,6 +66,9 @@ def normalize_arabic(text: str) -> str:
 # ==========================================
 # 4. RAG LOGIC (Now with Language Lock!)
 # ==========================================
+
+# Catalog used by the LLM to fix OCR typos
+VALID_CATALOG = ["بيرلا بوكيت", "أريجاتو", "هيفين", "ريفيرا", "برنسيسة", "نيو ماريوت", "كوين"]
 def get_rag_response(user_query: str, history: list) -> str:
     clean_query = normalize_arabic(user_query)
 
@@ -76,9 +77,12 @@ def get_rag_response(user_query: str, history: list) -> str:
     target_language = "ARABIC" if is_arabic else "ENGLISH"
 
     # 1. Optimize the search query
+    # 1. Optimize the search query
+    # 1. Optimize the search query
     optimizer_prompt = f"""You are a search engine query optimizer. Extract the core product name and features from the user's query.
     - Remove conversational filler.
     - FIX TYPOS: Compare the user's query against this official catalog: {VALID_CATALOG}
+    - CRITICAL: You MUST output the final keywords in ARABIC. Do not translate them to English.
     Output ONLY the raw, corrected keywords for the database search."""
     
     try:
@@ -92,6 +96,10 @@ def get_rag_response(user_query: str, history: list) -> str:
         ).choices[0].message.content
     except Exception:
         optimized_query = clean_query
+
+    # ---> ADD THESE TWO DEBUG LINES HERE <---
+    print(f"\nDEBUG: Original User Query: {user_query}")
+    print(f"DEBUG: Optimized Search Query: {optimized_query}\n")
 
     # 2. Retrieve Context
     query_vector = embedding_model.encode([optimized_query]).tolist()
@@ -111,6 +119,14 @@ CRITICAL RULES:
 KNOWLEDGE BASE CONTEXT:
 {context_string}
 """
+    #------------------------------
+    # 2. Retrieve Context
+    query_vector = embedding_model.encode([optimized_query]).tolist()
+    results = collection.query(query_embeddings=query_vector, n_results=5)
+    context_string = "\n\n".join(results['documents'][0])
+    
+    # ADD THIS LINE RIGHT HERE:
+    print(f"\n===== WHAT THE BOT IS READING =====\n{context_string}\n===================================\n")
     # Build the message chain: System -> Past History -> New Query
     messages = [{"role": "system", "content": system_prompt}]
     
