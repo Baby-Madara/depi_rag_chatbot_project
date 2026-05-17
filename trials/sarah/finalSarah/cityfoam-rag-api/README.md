@@ -72,7 +72,7 @@ cityfoam-rag-api/
 **1. Clone the repository and navigate to the root directory:**
 
 ```bash
-git clone [https://github.com/your-repo/cityfoam-rag-api.git](https://github.com/your-repo/cityfoam-rag-api.git)
+git clone [https://github.com/Baby-Madara/depi_rag_cahtbot_project/edit/main/trials/sarah/finalSarah/cityfoam-rag-api/]
 cd cityfoam-rag-api
 
 ```
