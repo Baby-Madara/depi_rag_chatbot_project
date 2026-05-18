@@ -50,9 +50,8 @@ llm_client = AzureOpenAI(
 # 3. HELPER FUNCTIONS & DATA STRUCTURES
 # ==========================================
 class ChatMessage(BaseModel):
-    role: str  # Either "user" or "assistant"
-    content: str  # The text of the message
-
+    role: str      # Either "user" or "assistant"
+    content: str   # The text of the message
 class ChatRequest(BaseModel):
     query: str
     history: list[ChatMessage] = []
@@ -95,6 +94,7 @@ def get_rag_response(user_query: str, history: list) -> tuple:
     optimizer_prompt = f"""You are a search engine query optimizer. Extract the core product name and features from the user's query.
     - Remove conversational filler.
     - FIX TYPOS: Compare the user's query against this official catalog: {VALID_CATALOG}
+    - CRITICAL: You MUST output the final keywords in ARABIC. Do not translate them to English.
     Output ONLY the raw, corrected keywords for the database search."""
 
     try:
@@ -177,11 +177,23 @@ CRITICAL RULES:
 KNOWLEDGE BASE CONTEXT:
 {context_string}
 """
+    #------------------------------
+    # 2. Retrieve Context
+    query_vector = embedding_model.encode([optimized_query]).tolist()
+    results = collection.query(query_embeddings=query_vector, n_results=5)
+    context_string = "\n\n".join(results['documents'][0])
+    
+    # ADD THIS LINE RIGHT HERE:
+    print(f"\n===== WHAT THE BOT IS READING =====\n{context_string}\n===================================\n")
+    # Build the message chain: System -> Past History -> New Query
     messages = [{"role": "system", "content": system_prompt}]
-
+    # Add previous chat history
     for msg in history:
         messages.append({"role": msg.role, "content": msg.content})
 
+   
+        
+    # Add the current user question
     messages.append({"role": "user", "content": user_query})
 
     response = llm_client.chat.completions.create(

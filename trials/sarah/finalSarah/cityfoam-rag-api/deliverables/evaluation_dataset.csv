@@ -1,0 +1,22 @@
+query,expected_source,query_type
+What is the price of the Perla Pocket mattress?,productsandprices.pdf,Pricing
+How much is a king size bed?,productsandprices.pdf,Pricing
+بكام مرتبة ميديكال مقاس 120؟,productsandprices.pdf,Pricing
+ما هي أسعار المراتب السوست المنفصلة؟,productsandprices.pdf,Pricing
+bkam martabet perla?,productsandprices.pdf,Pricing
+Can I return my pillow after 10 days?,refundpolicy.docx,Policy
+Do I need a receipt to get a refund?,refundpolicy.docx,Policy
+ينفع أبدل المرتبة بعد ما فتحتها؟,refundpolicy.docx,Policy
+ما هي سياسة الاسترجاع لو المنتج فيه عيب صناعة؟,refundpolicy.docx,Policy
+yanfa3 araga3 el martaba ba3d ma fat7taha?,refundpolicy.docx,Policy
+Where is the nearest branch in Cairo?,zbranches.xlsx,Location
+What are the working hours for the Alexandria store?,zbranches.xlsx,Location
+فين أقرب فرع لسيتي فوم في مدينة نصر؟,zbranches.xlsx,Location
+fen far3 madinet nasr?,zbranches.xlsx,Location
+Are there any mattresses with medical foam?,productsandprices.pdf,Product Features
+إيه الفرق بين السوست المتصلة والمنفصلة؟,productsandprices.pdf,Product Features
+هل متوفر مخدات ميموري فوم؟,productsandprices.pdf,Product Features
+fi marateb tebeya 3andoko?,productsandprices.pdf,Product Features
+How many years is the warranty on the mattresses?,refundpolicy.docx,Warranty
+ضمان مرتبة بيرلا كام سنة؟,refundpolicy.docx,Warranty
+el daman kam sana?,refundpolicy.docx,Warranty

@@ -1,12 +1,14 @@
 import os
 import pandas as pd
+import io
 import logging
 import re
+import camelot
 import chromadb
-import pymupdf4llm  # <--- NEW: The ultimate PDF-to-Markdown tool
 from unstructured.partition.auto import partition
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from sentence_transformers import SentenceTransformer
+
 from config import Config
 
 # Configure logging to see progress in the terminal
@@ -25,6 +27,19 @@ def normalize_arabic(text):
     text = re.sub(r'[\u064B-\u065F]', '', text)
     return text
 
+def fix_arabic_pdf_text(text):
+    """Fixes backwards Arabic text from PDFs while preserving English and Numbers."""
+    if not text or str(text).lower() == 'nan':
+        return ""
+    text = str(text).replace('\n', ' ')
+    reversed_text = text[::-1]
+    
+    def flip_back(match):
+        return match.group(0)[::-1]
+        
+    fixed_text = re.sub(r'[A-Za-z0-9\%\\,\\.\\(\\)\-]+', flip_back, reversed_text)
+    return fixed_text.strip()
+
 # ==========================================
 # 2. PROCESSING PIPELINE
 # ==========================================
@@ -32,9 +47,7 @@ def process_data_folder():
     """Scans the data folder and extracts content based on file type."""
     logger.info(f"Scanning folder: {Config.DATA_DIR}")
     final_documents = []
-    
-    # We increase chunk size slightly for Markdown tables so they don't get cut in half
-    text_splitter = RecursiveCharacterTextSplitter(chunk_size=1200, chunk_overlap=200)
+    text_splitter = RecursiveCharacterTextSplitter(chunk_size=800, chunk_overlap=150)
 
     if not os.path.exists(Config.DATA_DIR):
         logger.error(f"Data folder '{Config.DATA_DIR}' does not exist.")
@@ -47,8 +60,26 @@ def process_data_folder():
         ext = filename.split('.')[-1].lower()
         logger.info(f"Processing {filename}...")
 
-        # --- ROUTE 1: Spreadsheets (Pandas) ---
-        if ext in ['xlsx', 'xls', 'csv']:
+        # --- ROUTE 1: PDFs (Camelot Engine for Tables) ---
+        if ext == 'pdf':
+            try:
+                tables = camelot.read_pdf(file_path, pages='all', flavor='lattice')
+                for table in tables:
+                    df = table.df
+                    if df.empty: continue
+                    headers = df.iloc[0]
+                    for _, row in df[1:].iterrows():
+                        chunk_text = f"--- Catalog Entry ({filename}) ---\n"
+                        for col_name, cell_value in zip(headers, row):
+                            clean_col = normalize_arabic(fix_arabic_pdf_text(col_name))
+                            clean_cell = normalize_arabic(fix_arabic_pdf_text(cell_value))
+                            chunk_text += f"{clean_col}: {clean_cell}\n"
+                        final_documents.append({"text": chunk_text.strip(), "metadata": {"source": filename, "type": "pdf_table"}})
+            except Exception as e:
+                logger.error(f"Error processing PDF {filename}: {e}")
+
+        # --- ROUTE 2: Spreadsheets (Pandas) ---
+        elif ext in ['xlsx', 'xls', 'csv']:
             try:
                 df = pd.read_csv(file_path) if ext == 'csv' else pd.read_excel(file_path)
                 for _, row in df.fillna("N/A").iterrows():
@@ -58,41 +89,23 @@ def process_data_folder():
             except Exception as e:
                 logger.error(f"Error processing spreadsheet {filename}: {e}")
 
-        # --- ROUTE 2: PDFs (Automated Markdown Conversion) ---
-        elif ext == 'pdf':
-            try:
-                # 1. Convert the entire PDF into a clean Markdown string instantly
-                md_text = pymupdf4llm.to_markdown(file_path)
-                
-                # 2. Clean the Arabic text
-                clean_text = normalize_arabic(md_text)
-                
-                # 3. Split it into chunks
-                chunks = text_splitter.split_text(clean_text)
-                for i, chunk in enumerate(chunks):
-                    final_documents.append({"text": chunk, "metadata": {"source": filename, "type": "pdf_as_markdown", "chunk_index": i}})
-            except Exception as e:
-                logger.error(f"Error processing PDF {filename}: {e}")
-
-        # --- ROUTE 3: Word Docs (Unstructured) ---
+        # --- ROUTE 3: Word/Text (Recursive Splitting) ---
         elif ext in ['docx', 'txt']:
             try:
                 elements = partition(filename=file_path)
                 full_text = "\n\n".join([normalize_arabic(el.text) for el in elements if hasattr(el, 'text')])
                 chunks = text_splitter.split_text(full_text)
                 for i, chunk in enumerate(chunks):
-                    final_documents.append({"text": chunk, "metadata": {"source": filename, "type": "document", "chunk_index": i}})
+                    final_documents.append({"text": chunk, "metadata": {"source": filename, "type": "text", "chunk_index": i}})
             except Exception as e:
                 logger.error(f"Error processing document {filename}: {e}")
 
+    
+    with open('my_file.txt', 'w') as file:
+        file.write(text_to_write)
+        print("Text written successfully!")
     return final_documents
 
-    all_text_content= "\n\n".join([doc["text"] for doc in final_documents])
-
-    with open('my_file.txt', 'w', encoding='utf-8') as file:
-        file.write(all_text_content)
-        print(f"Done! Saved {len(final_documents)} chunks to my_file.txt")
-    return final_documents
 def build_vector_db(documents):
     """Embeds and saves documents to ChromaDB."""
     if not documents:
@@ -102,6 +115,7 @@ def build_vector_db(documents):
     logger.info("Connecting to ChromaDB and embedding documents...")
     client = chromadb.PersistentClient(path=Config.CHROMA_DB_DIR)
     
+    # Reset collection for a clean build
     try:
         client.delete_collection(name=Config.COLLECTION_NAME)
     except Exception: pass
