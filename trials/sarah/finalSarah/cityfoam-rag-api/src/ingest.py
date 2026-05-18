@@ -8,7 +8,6 @@ import chromadb
 from unstructured.partition.auto import partition
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from sentence_transformers import SentenceTransformer
-
 from config import Config
 
 # Configure logging to see progress in the terminal
@@ -100,12 +99,13 @@ def process_data_folder():
             except Exception as e:
                 logger.error(f"Error processing document {filename}: {e}")
 
-    
-    with open('my_file.txt', 'w') as file:
-        file.write(text_to_write)
-        print("Text written successfully!")
-    return final_documents
 
+    all_text_content= "\n\n".join([doc["text"] for doc in final_documents])
+
+    with open('my_file.txt', 'w', encoding='utf-8') as file:
+        file.write(all_text_content)
+        print(f"Done! Saved {len(final_documents)} chunks to my_file.txt")
+    return final_documents
 def build_vector_db(documents):
     """Embeds and saves documents to ChromaDB."""
     if not documents:

@@ -13,3 +13,5 @@ pypdf
 pandas
 openpyxl
 python-docx
+pyswarms
+apscheduler

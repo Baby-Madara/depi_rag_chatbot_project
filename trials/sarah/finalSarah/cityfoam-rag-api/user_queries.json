@@ -1,0 +1,14 @@
+[
+  {
+    "query": "عايزه اسال عن اماكن الشركه في القاهره وهل موجود مخدات رقبه ؟",
+    "expected": "مخدات رقبة"
+  },
+  {
+    "query": "do you have contour memory pillows",
+    "expected": "Contour memory pillows"
+  },
+  {
+    "query": "what is the difference between the contour memory foam and the long contour pillow in term of use and price?",
+    "expected": "contour memory foam, long contour pillow"
+  }
+]
