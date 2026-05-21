@@ -55,14 +55,10 @@ def normalize_arabic(text: str) -> str:
     return text
 
 # RAG Pipeline Function
-
-# Catalog used by the LLM to fix OCR typos
 VALID_CATALOG = ["بيرلا بوكيت", "أريجاتو", "هيفين", "ريفيرا", "برنسيسة", "نيو ماريوت", "كوين"]
 def get_rag_response(user_query: str, history: list) -> str:
     clean_query = normalize_arabic(user_query)
-
-    # NEW: Detect if the user is typing in Arabic using Regex
-    is_arabic = bool(re.search(r'[\u0600-\u06FF]', user_query))
+    is_arabic = bool(re.search(r'[\u0600-\u06FF]', clean_query))
     target_language = "ARABIC" if is_arabic else "ENGLISH"
     optimizer_prompt = f"""You are a search engine query optimizer. Extract the core product name and features from the user's query.
     - Remove conversational filler.
