@@ -1,22 +1,18 @@
+#Step 1: Imports and global Configs
 import os
 import pandas as pd
 import logging
 import re
 import chromadb
-import pymupdf4llm  # <--- NEW: The ultimate PDF-to-Markdown tool
+import pymupdf4llm
 from unstructured.partition.auto import partition
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from sentence_transformers import SentenceTransformer
-
 from config import Config
-
-# Configure logging to see progress in the terminal
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# ==========================================
-# 1. TEXT UTILITIES
-# ==========================================
+#Step 2: Arabic Preprocessing pipeline
 def normalize_arabic(text):
     """Standardizes Arabic characters to eliminate common spelling mismatches."""
     if not text: return ""
@@ -26,15 +22,11 @@ def normalize_arabic(text):
     text = re.sub(r'[\u064B-\u065F]', '', text)
     return text
 
-# ==========================================
-# 2. PROCESSING PIPELINE
-# ==========================================
+#Step 3: Scanning the directory and handling file formats
 def process_data_folder():
     """Scans the data folder and extracts content based on file type."""
     logger.info(f"Scanning folder: {Config.DATA_DIR}")
     final_documents = []
-    
-    # We increase chunk size slightly for Markdown tables so they don't get cut in half
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=1200, chunk_overlap=200)
 
     if not os.path.exists(Config.DATA_DIR):
@@ -48,7 +40,6 @@ def process_data_folder():
         ext = filename.split('.')[-1].lower()
         logger.info(f"Processing {filename}...")
 
-        # --- ROUTE 1: Spreadsheets (Pandas) ---
         if ext in ['xlsx', 'xls', 'csv']:
             try:
                 df = pd.read_csv(file_path) if ext == 'csv' else pd.read_excel(file_path)
@@ -59,7 +50,6 @@ def process_data_folder():
             except Exception as e:
                 logger.error(f"Error processing spreadsheet {filename}: {e}")
 
-        # --- ROUTE 2: PDFs (Automated Markdown Conversion) ---
         elif ext == 'pdf':
             try:
                 # 1. Convert the entire PDF into a clean Markdown string instantly

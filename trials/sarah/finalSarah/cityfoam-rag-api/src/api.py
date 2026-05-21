@@ -9,9 +9,7 @@ from sentence_transformers import SentenceTransformer
 from openai import AzureOpenAI
 from src.config import Config
 
-# ==========================================
-# 1. INITIALIZATION & SECURITY SETUP
-# ==========================================
+#1. Initialize FastAPI and define security scheme
 app = FastAPI(title="CityFoam Customer Support API", version="1.0.0")
 
 # Security header definition
@@ -23,9 +21,7 @@ def verify_api_key(api_key: str = Security(api_key_header)):
         raise HTTPException(status_code=403, detail="Access Denied: Invalid API Key")
     return api_key
 
-# ==========================================
-# 2. SETUP AI AND DATABASE CLIENTS
-# ==========================================
+#2. Setup ChromaDB client and SentenceTransformer embedding model
 embedding_model = SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2')
 chroma_client = chromadb.PersistentClient(path=Config.CHROMA_DB_DIR)
 
@@ -40,9 +36,7 @@ llm_client = AzureOpenAI(
     api_version=Config.AZURE_API_VERSION
 )
 
-# ==========================================
-# 3. HELPER FUNCTIONS & DATA STRUCTURES
-# ==========================================
+#3. Helper function to normalize Arabic text
 class ChatMessage(BaseModel):
     role: str      # Either "user" or "assistant"
     content: str   # The text of the message
@@ -60,12 +54,7 @@ def normalize_arabic(text: str) -> str:
     text = re.sub(r'[\u064B-\u065F]', '', text)
     return text
 
-# ==========================================
-# 4. RAG LOGIC
-# ==========================================
-# ==========================================
-# 4. RAG LOGIC (Now with Language Lock!)
-# ==========================================
+# RAG Pipeline Function
 
 # Catalog used by the LLM to fix OCR typos
 VALID_CATALOG = ["بيرلا بوكيت", "أريجاتو", "هيفين", "ريفيرا", "برنسيسة", "نيو ماريوت", "كوين"]
@@ -75,10 +64,6 @@ def get_rag_response(user_query: str, history: list) -> str:
     # NEW: Detect if the user is typing in Arabic using Regex
     is_arabic = bool(re.search(r'[\u0600-\u06FF]', user_query))
     target_language = "ARABIC" if is_arabic else "ENGLISH"
-
-    # 1. Optimize the search query
-    # 1. Optimize the search query
-    # 1. Optimize the search query
     optimizer_prompt = f"""You are a search engine query optimizer. Extract the core product name and features from the user's query.
     - Remove conversational filler.
     - FIX TYPOS: Compare the user's query against this official catalog: {VALID_CATALOG}
@@ -126,7 +111,7 @@ KNOWLEDGE BASE CONTEXT:
     context_string = "\n\n".join(results['documents'][0])
     
     # ADD THIS LINE RIGHT HERE:
-    print(f"\n===== WHAT THE BOT IS READING =====\n{context_string}\n===================================\n")
+    #print(f"\n===== WHAT THE BOT IS READING =====\n{context_string}\n===================================\n")
     # Build the message chain: System -> Past History -> New Query
     messages = [{"role": "system", "content": system_prompt}]
     
@@ -144,9 +129,6 @@ KNOWLEDGE BASE CONTEXT:
     )
     return response.choices[0].message.content
 
-# ==========================================
-# 5. API ENDPOINTS
-# ==========================================
 app.mount("/static", StaticFiles(directory="static"), name="static")
 @app.get("/favicon.ico", include_in_schema=False)
 def favicon():
@@ -165,6 +147,7 @@ def chat_endpoint(request: ChatRequest):
     try:
         # Notice we are passing BOTH the query and the history here!
         answer = get_rag_response(request.query, request.history)
+        print(f"\nDEBUG: Final Answer from LLM:\n{answer}\n")
         return {
             "status": "success",
             "query": request.query,
