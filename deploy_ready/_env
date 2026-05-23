@@ -15,7 +15,7 @@ OLLAMA_BASE_URL=http://localhost:11434
 # PREFERRED: store these in Azure Key Vault and set only AZURE_KEYVAULT_URL.
 # For local dev, you can keep them here — they are the fallback.
 AZURE_ENDPOINT=https://llm-standalone.openai.azure.com/
-AZURE_API_KEY=Bb4i6tvsFDFJXkOrg2Bx6IatiLTBYlEKbSit1GGFIolK4pTdJh2jJQQJ99CEACfhMk5XJ3w3AAABACOGtT4S
+AZURE_API_KEY=your-key-here
 AZURE_API_VERSION=2024-12-01-preview
 AZURE_DEPLOYMENT_NAME=gpt-4o-standalone-resource
 
@@ -24,17 +24,18 @@ AZURE_DEPLOYMENT_NAME=gpt-4o-standalone-resource
 # Secret names in Key Vault use hyphens:  AZURE-API-KEY, CITYFOAM-SECRET-KEY
 # Leave blank to use environment variables only (local dev).
 AZURE_KEYVAULT_URL=
+
 # ── Security ──────────────────────────────────────────────────────────────
 REQUIRE_API_KEY=false        # set true to enforce X-API-Key on /api/chat/stream
 CITYFOAM_SECRET_KEY=change_me_in_production
-CITYFOAM_ADMIN_KEY=rag123   # required for all /admin/* endpoints
+CITYFOAM_ADMIN_KEY=change_this_admin_key   # required for all /admin/* endpoints
 
 # ── MLflow / Azure ML ─────────────────────────────────────────────────────
 # Local dev: leave blank → runs saved to ./mlruns/
 # Azure ML : set to your workspace URI (shown in Azure ML Studio → Settings)
 #   azureml://eastus.api.azureml.ms/mlflow/v1.0/subscriptions/<SUB>/
 #   resourceGroups/<RG>/providers/Microsoft.MachineLearningServices/workspaces/<WS>
-MLFLOW_TRACKING_URI=file:///app/mlruns
+MLFLOW_TRACKING_URI=
 ENV=production        # controls MLflow experiment name (production | staging)
 
 

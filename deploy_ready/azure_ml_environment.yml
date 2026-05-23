@@ -1,0 +1,56 @@
+# =============================================================================
+# CityFoam — Azure ML Environment
+# =============================================================================
+# Defines the Python environment used by all pipeline steps.
+# Register with:
+#   az ml environment create -f azure_ml_environment.yml \
+#     --workspace-name <WS> --resource-group <RG>
+# =============================================================================
+
+$schema: https://azuremlschemas.azureedge.net/latest/environment.schema.json
+
+name: cityfoam-env
+version: "3"
+description: "CityFoam RAG pipeline environment — FastAPI, LangChain, ChromaDB, MLflow"
+
+image: mcr.microsoft.com/azureml/openmpi4.1.0-ubuntu22.04:latest
+
+conda_file:
+  name: cityfoam
+  channels:
+    - defaults
+    - conda-forge
+  dependencies:
+    - python=3.11
+    - pip
+
+    - pip:
+        # Web framework
+        - fastapi>=0.110.0
+        - uvicorn[standard]>=0.29.0
+        - pydantic>=2.6.4
+
+        # AI / RAG
+        - langchain-core>=0.2.0
+        - langchain-openai>=0.1.0
+        - langchain-ollama>=0.1.0
+        - langchain-text-splitters>=0.0.1
+        - openai>=1.14.2
+        - chromadb>=0.4.24
+        - sentence-transformers>=2.6.1
+
+        # MLflow + Azure ML integration
+        - mlflow>=2.13.0
+        - azureml-mlflow>=1.56.0
+        - azure-identity>=1.16.0
+        - azure-keyvault-secrets>=4.8.0
+
+        # Data processing
+        - pandas>=2.2.1
+        - openpyxl>=3.1.2
+        - tabulate>=0.9.0
+        - unstructured[docx]>=0.14.0
+        - pymupdf4llm>=0.0.9
+
+        # Utilities
+        - python-dotenv>=1.0.1

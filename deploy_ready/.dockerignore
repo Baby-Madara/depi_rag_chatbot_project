@@ -1,16 +1,40 @@
-# Ignore local environment and cache
+# Python cache
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
+.Python
+
+# Virtual environments (never copy these into the image)
 venv/
-.env
-.git
-.vscode
+.venv/
+env/
+.env_backup
+
+# Local Chroma and MLflow data (mounted as volumes at runtime)
+chroma_db/
+mlruns/
+monitoring.db
+monitoring_db/
+
+# IDE / OS noise
+.idea/
+.vscode/
+*.DS_Store
+Thumbs.db
+
+# Git
+.git/
 .gitignore
 
-# Ignore local DB data to allow fresh ingestion or volume mounting
-chroma_db/
+# Test artifacts
+.pytest_cache/
+htmlcov/
+.coverage
 
-# Ignore documentation/logs
-progress-log.md
-ToDo.md
-README.md
+# Debug dumps
+data/_ingest_debug.txt
+
+# Secrets — never bake into the image
+.env
+secrets.json

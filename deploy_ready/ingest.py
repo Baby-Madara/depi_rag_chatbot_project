@@ -1,20 +1,19 @@
 """
-CityFoam RAG — Ingestion Pipeline
-===================================
-Scans ./data/ and converts every supported file into embedded chunks stored in ChromaDB.
+CityFoam RAG — Ingestion Pipeline (v2 — Merged)
+=================================================
+New in this version (improvements from Sara's implementation):
+  1. pymupdf4llm PDF route — converts PDFs to clean Markdown before splitting,
+     which preserves Arabic table structure far better than unstructured alone.
+     Falls back to unstructured automatically if pymupdf4llm is not installed.
+  2. Larger chunk size (1 200 chars, up from 800) with a graceful override so
+     Markdown tables are not split in the middle of a row.
 
-Supported formats:
-  • .md / .txt   — recursive character splitting
-  • .docx        — unstructured partition → recursive splitting
-  • .xlsx / .xls / .csv — one chunk per row (structured records)
-  • .pdf         — unstructured partition → recursive splitting  (camelot path commented out)
-
-Changes vs. original:
-  • Added .md support (knowledge_base.md was previously silently skipped).
-  • Removed debug `my_file.txt` dump (use --debug flag instead).
-  • config.py validate() is now called explicitly, not silently at import.
-  • Batch-encode embeddings for speed.
-  • Cleaner progress logging with chunk counts per file.
+Retained from original:
+  • .md / .txt / .docx / .xlsx / .csv support.
+  • normalize_arabic + fix_arabic_pdf_text helpers.
+  • Batch SentenceTransformer encoding.
+  • --debug flag for text dump.
+  • config.py validate() called explicitly.
 """
 
 import argparse
@@ -29,8 +28,6 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from sentence_transformers import SentenceTransformer
 from unstructured.partition.auto import partition
 
-# ── Config ──────────────────────────────────────────────────────────────────
-# Import without triggering validate() for Ollama-only setups.
 from config import Config
 
 logging.basicConfig(
@@ -69,11 +66,17 @@ def fix_arabic_pdf_text(text: str) -> str:
 
 
 # ============================================================================
-# 2. FILE PROCESSORS
+# 2. SPLITTERS
 # ============================================================================
 
-TEXT_SPLITTER = RecursiveCharacterTextSplitter(chunk_size=800, chunk_overlap=150)
+# Slightly larger chunks (Sara's recommendation) so Markdown tables are not
+# cut mid-row.  Overlap keeps cross-chunk context intact.
+TEXT_SPLITTER = RecursiveCharacterTextSplitter(chunk_size=1200, chunk_overlap=200)
 
+
+# ============================================================================
+# 3. FILE PROCESSORS
+# ============================================================================
 
 def _process_text_or_md(file_path: str, filename: str) -> list[dict]:
     """Plain text and Markdown files — read directly, then split."""
@@ -88,7 +91,7 @@ def _process_text_or_md(file_path: str, filename: str) -> list[dict]:
 
 
 def _process_docx_or_txt_unstructured(file_path: str, filename: str) -> list[dict]:
-    """Word documents and plain-text files processed via unstructured."""
+    """Word documents processed via unstructured."""
     elements = partition(filename=file_path)
     full_text = "\n\n".join(
         normalize_arabic(el.text) for el in elements if hasattr(el, "text") and el.text
@@ -98,6 +101,32 @@ def _process_docx_or_txt_unstructured(file_path: str, filename: str) -> list[dic
         {"text": chunk, "metadata": {"source": filename, "type": "document", "chunk_index": i}}
         for i, chunk in enumerate(chunks)
     ]
+
+
+def _process_pdf(file_path: str, filename: str) -> list[dict]:
+    """
+    PDF processing — two-tier approach (NEW from Sara):
+
+    Tier 1 (preferred): pymupdf4llm
+        Converts the entire PDF to clean Markdown in one call.
+        Preserves Arabic table structure, headings, and lists.
+
+    Tier 2 (fallback): unstructured
+        Used automatically when pymupdf4llm is not installed.
+    """
+    try:
+        import pymupdf4llm  # noqa: PLC0415
+        logger.info("    PDF route: pymupdf4llm (Markdown)")
+        md_text = pymupdf4llm.to_markdown(file_path)
+        clean   = normalize_arabic(md_text)
+        chunks  = TEXT_SPLITTER.split_text(clean)
+        return [
+            {"text": chunk, "metadata": {"source": filename, "type": "pdf_as_markdown", "chunk_index": i}}
+            for i, chunk in enumerate(chunks)
+        ]
+    except ImportError:
+        logger.warning("    pymupdf4llm not installed — falling back to unstructured for PDF.")
+        return _process_docx_or_txt_unstructured(file_path, filename)
 
 
 def _process_spreadsheet(file_path: str, filename: str, ext: str) -> list[dict]:
@@ -116,7 +145,7 @@ def _process_spreadsheet(file_path: str, filename: str, ext: str) -> list[dict]:
 
 
 # ============================================================================
-# 3. PROCESSING PIPELINE
+# 4. PROCESSING PIPELINE
 # ============================================================================
 
 def process_data_folder(debug: bool = False) -> list[dict]:
@@ -127,7 +156,7 @@ def process_data_folder(debug: bool = False) -> list[dict]:
     logger.info("Scanning data folder: %s", Config.DATA_DIR)
 
     if not os.path.exists(Config.DATA_DIR):
-        logger.error("Data folder '%s' does not exist. Create it and add your files.", Config.DATA_DIR)
+        logger.error("Data folder '%s' does not exist.", Config.DATA_DIR)
         return []
 
     all_files = [
@@ -157,8 +186,7 @@ def process_data_folder(debug: bool = False) -> list[dict]:
                 docs = _process_spreadsheet(file_path, filename, ext)
 
             elif ext == "pdf":
-                # Using unstructured for PDFs (camelot path available but commented out)
-                docs = _process_docx_or_txt_unstructured(file_path, filename)
+                docs = _process_pdf(file_path, filename)   # ← upgraded route
 
             else:
                 logger.warning("  Skipping unsupported file type: %s", filename)
@@ -172,7 +200,6 @@ def process_data_folder(debug: bool = False) -> list[dict]:
 
     logger.info("Total chunks ready for embedding: %d", len(final_documents))
 
-    # Optional debug dump
     if debug:
         dump_path = os.path.join(Config.DATA_DIR, "_ingest_debug.txt")
         with open(dump_path, "w", encoding="utf-8") as fh:
@@ -183,7 +210,7 @@ def process_data_folder(debug: bool = False) -> list[dict]:
 
 
 # ============================================================================
-# 4. VECTOR DB BUILD
+# 5. VECTOR DB BUILD
 # ============================================================================
 
 def build_vector_db(documents: list[dict]) -> None:
@@ -195,7 +222,6 @@ def build_vector_db(documents: list[dict]) -> None:
     logger.info("Connecting to ChromaDB at: %s", Config.CHROMA_DB_DIR)
     client = chromadb.PersistentClient(path=Config.CHROMA_DB_DIR)
 
-    # Drop and recreate for a clean build
     try:
         client.delete_collection(name=Config.COLLECTION_NAME)
         logger.info("Existing collection '%s' dropped.", Config.COLLECTION_NAME)
@@ -209,8 +235,8 @@ def build_vector_db(documents: list[dict]) -> None:
 
     texts = [d["text"] for d in documents]
 
-    logger.info("Embedding %d chunks (this may take a minute)…", len(texts))
-    embeddings = embedding_model.encode(texts, show_progress_bar=True).tolist()
+    logger.info("Embedding %d chunks (batch)…", len(texts))
+    embeddings = embedding_model.encode(texts, show_progress_bar=True, normalize_embeddings=True).tolist()
 
     collection.add(
         documents=texts,
@@ -219,17 +245,17 @@ def build_vector_db(documents: list[dict]) -> None:
         ids=[f"doc_{i}" for i in range(len(documents))],
     )
 
-    logger.info("✅ Successfully stored %d chunks in collection '%s'.",
+    logger.info("Successfully stored %d chunks in collection '%s'.",
                 len(documents), Config.COLLECTION_NAME)
 
 
 # ============================================================================
-# 5. ENTRY POINT
+# 6. ENTRY POINT
 # ============================================================================
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="CityFoam RAG ingestion pipeline")
-    parser.add_argument("--debug", action="store_true", help="Dump extracted text to a file for inspection")
+    parser.add_argument("--debug", action="store_true", help="Dump extracted text for inspection")
     args = parser.parse_args()
 
     docs = process_data_folder(debug=args.debug)

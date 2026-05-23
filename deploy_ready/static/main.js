@@ -11,7 +11,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     let currentChatId = null;
 
-    // Fetch config from backend
+    // -----------------------------------------------------------------------
+    // Config
+    // -----------------------------------------------------------------------
     fetch('/api/config')
         .then(res => res.json())
         .then(config => {
@@ -21,7 +23,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             if (config.theme === 'light') {
                 document.body.classList.remove('dark-theme');
-            } else if (config.theme === 'dark') {
+            } else {
                 document.body.classList.add('dark-theme');
             }
             if (!config.enableSidebar) {
@@ -31,64 +33,110 @@ document.addEventListener('DOMContentLoaded', () => {
         })
         .catch(err => console.error('Failed to load config:', err));
 
-    // Toggle Sidebar
-    toggleSidebarBtn.addEventListener('click', () => {
-        sidebar.classList.toggle('hidden');
-    });
+    // -----------------------------------------------------------------------
+    // Sidebar & theme toggles
+    // -----------------------------------------------------------------------
+    toggleSidebarBtn.addEventListener('click', () => sidebar.classList.toggle('hidden'));
+    toggleThemeBtn.addEventListener('click', () => document.body.classList.toggle('dark-theme'));
 
-    // Toggle Theme
-    toggleThemeBtn.addEventListener('click', () => {
-        document.body.classList.toggle('dark-theme');
-    });
+    // -----------------------------------------------------------------------
+    // Markdown renderer (NEW — from Sara)
+    // Converts **bold** → <strong> and \n → <br> before display.
+    // -----------------------------------------------------------------------
+    function renderMarkdown(rawText) {
+        let html = rawText
+            .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')   // bold
+            .replace(/\*(.*?)\*/g, '<em>$1</em>')               // italic
+            .replace(/\n/g, '<br>');                             // newlines
+        return html;
+    }
 
-    function appendMessage(sender, text) {
+    // -----------------------------------------------------------------------
+    // Typewriter effect (NEW — from Sara)
+    // Streams HTML character-by-character without breaking mid-tag.
+    // Only used for static (history) messages; live streaming uses the
+    // chunk-appending path below so both effects work together.
+    // -----------------------------------------------------------------------
+    function typewriterAppend(element, htmlText, speed = 12) {
+        let i = 0;
+        function tick() {
+            if (i >= htmlText.length) return;
+            // Skip over entire HTML tags instantly so they don't render broken
+            if (htmlText.charAt(i) === '<') {
+                const tagEnd = htmlText.indexOf('>', i);
+                if (tagEnd !== -1) { i = tagEnd + 1; }
+            }
+            element.innerHTML = htmlText.substring(0, i);
+            i++;
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+            setTimeout(tick, speed);
+        }
+        tick();
+    }
+
+    // -----------------------------------------------------------------------
+    // Message helpers
+    // -----------------------------------------------------------------------
+    function _buildBubble(sender) {
         const msgDiv = document.createElement('div');
         msgDiv.className = `message ${sender === 'user' ? 'user-message' : 'ai-message'}`;
-        
+
         const avatar = document.createElement('div');
         avatar.className = `avatar ${sender === 'ai' ? 'ai-avatar' : ''}`;
         avatar.textContent = sender === 'user' ? 'U' : 'AI';
 
         const content = document.createElement('div');
         content.className = 'message-content';
-        content.textContent = text;
 
         msgDiv.appendChild(avatar);
         msgDiv.appendChild(content);
-
         messagesContainer.appendChild(msgDiv);
         messagesContainer.scrollTop = messagesContainer.scrollHeight;
+
+        return content; // caller gets a reference to write into
+    }
+
+    /**
+     * appendMessage — used when loading history or showing a complete message.
+     * AI messages get the typewriter effect; user messages appear instantly.
+     */
+    function appendMessage(sender, text) {
+        const content = _buildBubble(sender);
+        if (sender === 'ai') {
+            // Render Markdown then typewrite
+            typewriterAppend(content, renderMarkdown(text));
+        } else {
+            content.textContent = text;
+        }
     }
 
     function showTyping() {
         const typingDiv = document.createElement('div');
-        typingDiv.className = 'message ai-message typing';
         typingDiv.id = 'typing-indicator-msg';
-        
+        typingDiv.className = 'message ai-message typing';
+
         const avatar = document.createElement('div');
         avatar.className = 'avatar ai-avatar';
         avatar.textContent = 'AI';
-        
+
         const indicator = document.createElement('div');
         indicator.className = 'typing-indicator';
         indicator.innerHTML = '<span></span><span></span><span></span>';
 
         typingDiv.appendChild(avatar);
         typingDiv.appendChild(indicator);
-        
         messagesContainer.appendChild(typingDiv);
         messagesContainer.scrollTop = messagesContainer.scrollHeight;
     }
 
     function removeTyping() {
-        const typingMsg = document.getElementById('typing-indicator-msg');
-        if (typingMsg) {
-            typingMsg.remove();
-        }
+        const el = document.getElementById('typing-indicator-msg');
+        if (el) el.remove();
     }
 
-    // --- MULTI-CHAT LOGIC ---
-
+    // -----------------------------------------------------------------------
+    // Multi-chat logic
+    // -----------------------------------------------------------------------
     async function loadChats() {
         try {
             const res = await fetch('/api/chats');
@@ -98,10 +146,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (data.chats.length === 0) {
                     await createNewChat();
                 } else {
-                    data.chats.forEach(chat => {
-                        addChatToSidebar(chat.id, chat.title);
-                    });
-                    // Load the most recent chat
+                    data.chats.forEach(chat => addChatToSidebar(chat.id, chat.title));
                     await loadChatHistory(data.chats[0].id);
                 }
             }
@@ -117,7 +162,6 @@ document.addEventListener('DOMContentLoaded', () => {
             li.id = `chat-item-${id}`;
             li.className = 'history-item';
             li.addEventListener('click', () => loadChatHistory(id));
-            // insert at top
             historyList.insertBefore(li, historyList.firstChild);
         }
         li.textContent = title;
@@ -125,8 +169,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function setActiveChatInSidebar(id) {
         document.querySelectorAll('.history-item').forEach(el => el.classList.remove('active'));
-        const activeItem = document.getElementById(`chat-item-${id}`);
-        if (activeItem) activeItem.classList.add('active');
+        const item = document.getElementById(`chat-item-${id}`);
+        if (item) item.classList.add('active');
     }
 
     async function createNewChat() {
@@ -148,8 +192,8 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             currentChatId = chatId;
             setActiveChatInSidebar(chatId);
-            messagesContainer.innerHTML = ''; // Clear current view
-            
+            messagesContainer.innerHTML = '';
+
             const res = await fetch(`/api/chats/${chatId}`);
             const data = await res.json();
             if (data.status === 'success') {
@@ -160,27 +204,23 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // Handle form submit with Real-time Stream Parsing
+    // -----------------------------------------------------------------------
+    // Send message — SSE streaming  +  live Markdown rendering
+    // -----------------------------------------------------------------------
     chatForm.addEventListener('submit', async (e) => {
         e.preventDefault();
         const text = messageInput.value.trim();
         if (!text || !currentChatId) return;
 
-        // Add User message
         appendMessage('user', text);
         messageInput.value = '';
-
-        // Show typing indicator momentarily while waiting for first byte
         showTyping();
 
         try {
-            // Hit the streaming route, passing the current chat ID for context!
             const response = await fetch('/api/chat/stream', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({ message: text, chat_id: currentChatId })
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ message: text, chat_id: currentChatId }),
             });
 
             removeTyping();
@@ -190,57 +230,48 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
 
-            // Prepare dynamic bubble for stream
-            const msgDiv = document.createElement('div');
-            msgDiv.className = 'message ai-message';
-            
-            const avatar = document.createElement('div');
-            avatar.className = 'avatar ai-avatar';
-            avatar.textContent = 'AI';
+            // Live bubble that we append chunks into
+            const content = _buildBubble('ai');
 
-            const content = document.createElement('div');
-            content.className = 'message-content';
-            
-            msgDiv.appendChild(avatar);
-            msgDiv.appendChild(content);
-            messagesContainer.appendChild(msgDiv);
+            // We accumulate the raw text and re-render Markdown on each chunk
+            // so bold/italic markers resolve correctly even mid-stream.
+            let rawAccumulated = '';
 
-            // Read the stream chunk by chunk
             const reader = response.body.getReader();
-            const decoder = new TextDecoder("utf-8");
+            const decoder = new TextDecoder('utf-8');
             let done = false;
 
             while (!done) {
                 const { value, done: readerDone } = await reader.read();
                 done = readerDone;
-                
+
                 if (value) {
-                    const chunkStr = decoder.decode(value, { stream: true });
-                    const lines = chunkStr.split('\n');
-                    
+                    const lines = decoder.decode(value, { stream: true }).split('\n');
+
                     for (const line of lines) {
-                        if (line.startsWith('data: ')) {
-                            const dataStr = line.slice(6);
-                            if (dataStr === '[DONE]') {
-                                done = true;
-                                break;
+                        if (!line.startsWith('data: ')) continue;
+                        const dataStr = line.slice(6);
+
+                        if (dataStr === '[DONE]') { done = true; break; }
+
+                        try {
+                            const obj = JSON.parse(dataStr);
+
+                            if (obj.error) {
+                                content.innerHTML += `<br><em style="color:red">[Error: ${obj.error}]</em>`;
+
+                            } else if (obj.chunk) {
+                                rawAccumulated += obj.chunk;
+                                // Re-render Markdown on every chunk so markers resolve live
+                                content.innerHTML = renderMarkdown(rawAccumulated);
+                                messagesContainer.scrollTop = messagesContainer.scrollHeight;
+
+                            } else if (obj.title) {
+                                const li = document.getElementById(`chat-item-${currentChatId}`);
+                                if (li) li.textContent = obj.title;
                             }
-                            try {
-                                const dataObj = JSON.parse(dataStr);
-                                if (dataObj.error) {
-                                    content.textContent += "\n[Error: " + dataObj.error + "]";
-                                } else if (dataObj.chunk) {
-                                    // Append text to the bubble in real-time
-                                    content.textContent += dataObj.chunk;
-                                    messagesContainer.scrollTop = messagesContainer.scrollHeight;
-                                } else if (dataObj.title) {
-                                    // Update auto-generated chat title in sidebar
-                                    const li = document.getElementById(`chat-item-${currentChatId}`);
-                                    if (li) li.textContent = dataObj.title;
-                                }
-                            } catch (err) {
-                                console.error("Error parsing JSON chunk from stream", err);
-                            }
+                        } catch (err) {
+                            console.error('JSON parse error in stream chunk', err);
                         }
                     }
                 }
@@ -252,6 +283,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // Initialize application by loading chats
+    // Boot
     loadChats();
 });

@@ -1,261 +1,444 @@
 """
-CityFoam RAG Chatbot — Flask Server
-=====================================
-Fixes applied vs. original:
-  1. ChromaDB client + embedding model are now module-level singletons (not re-created per request).
-  2. LLM is called with the proper lc_messages list, not a raw system-prompt string.
-     RAG context lives in SystemMessage; conversation history follows as Human/AI turns.
-  3. AZURE_BASE_URL → AZURE_ENDPOINT (matches .env).
-  4. Duplicate imports + double clean_query removed.
-  5. Static files served from ./static/ (matches Flask config).
-  6. Added /api/health endpoint for Docker health-check.
-  7. Debug print statements replaced with structured logging.
+CityFoam RAG Chatbot — FastAPI Server (v3)
+==========================================
+Migration from Flask → FastAPI plus five new capabilities:
+
+  1. FastAPI + async throughout — true async SSE via StreamingResponse,
+     async LangChain .astream(), Pydantic request/response models.
+  2. Re-ingestion admin endpoint — POST /admin/reingest triggers the
+     pipeline in a BackgroundTask without restarting the server.
+  3. Monitoring & observability — every query is timed and logged to
+     SQLite (latency_ms, rag_score, language, optimized query).
+     LatencyMiddleware adds X-Process-Time-Ms to every response.
+  4. RAG quality evaluation — retrieval distances are scored; low-score
+     queries get a caution note injected into the system prompt and a
+     warning flag in the monitoring log.
+  5. Secret management — all sensitive values are resolved via secrets.py
+     which tries Azure Key Vault first, then falls back to .env.
+
+Retained from v2:
+  - Dual LLM provider: Ollama + Azure OpenAI (LangChain).
+  - Query optimizer (LLM pre-cleans search query).
+  - Language detection and lock (Arabic / English).
+  - Multi-chat session management + SSE streaming.
+  - Static file serving for the frontend.
 """
 
-import os
 import json
-import uuid
 import logging
+import os
+import re
+import time
+import uuid
 import warnings
+from contextlib import asynccontextmanager
+from typing import Optional
 
 import chromadb
 from dotenv import load_dotenv
-from flask import Flask, request, jsonify, send_from_directory, Response, stream_with_context
-from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
+from fastapi import BackgroundTasks, Depends, FastAPI, Header, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.staticfiles import StaticFiles
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_ollama import ChatOllama
 from langchain_openai import AzureChatOpenAI
+from pydantic import BaseModel
 from sentence_transformers import SentenceTransformer
 
+from admin import router as admin_router
 from ingest import normalize_arabic
-from config import Config
+from mlflow_tracker import init_mlflow, log_query_to_mlflow
+from monitoring import LatencyMiddleware, QueryLogEntry, log_query
+from rag_eval import evaluate_retrieval
+#from secrets import get_secret
+from app_secrets import get_secret
+from scheduler import start_scheduler, stop_scheduler
 
 # ---------------------------------------------------------------------------
 # Logging
 # ---------------------------------------------------------------------------
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s — %(message)s",
+    format="%(asctime)s [%(levelname)s] %(name)s - %(message)s",
 )
 logger = logging.getLogger("cityfoam.server")
 
 # ---------------------------------------------------------------------------
-# Environment
+# Load .env (local dev) — Key Vault takes priority in get_secret()
 # ---------------------------------------------------------------------------
-base_dir = os.path.dirname(os.path.abspath(__file__))
-load_dotenv(os.path.join(base_dir, ".env"))
-
-PORT            = int(os.environ.get("PORT", 8000))
-LLM_PROVIDER    = os.environ.get("LLM_PROVIDER", "ollama")   # "ollama" | "azure"
-COMPANY_NAME    = os.environ.get("COMPANY_NAME", "AI Chatbot")
+load_dotenv()
 
 # ---------------------------------------------------------------------------
-# Flask app
+# Runtime config
 # ---------------------------------------------------------------------------
-app = Flask(__name__, static_folder="static", static_url_path="")
+PORT          = int(get_secret("PORT", "8000"))
+LLM_PROVIDER  = get_secret("LLM_PROVIDER", "ollama")
+COMPANY_NAME  = get_secret("COMPANY_NAME", "CityFoam")
+
+REQUIRE_API_KEY     = get_secret("REQUIRE_API_KEY", "false").lower() == "true"
+CITYFOAM_SECRET_KEY = get_secret("CITYFOAM_SECRET_KEY", "")
+
+VALID_CATALOG = [
+    "بيرلا بوكيت", "اريجاتو", "هيفين", "ريفيرا", "برنسيسه",
+    "نيو ماريوت", "كوين", "لكشري بوكيت", "ماريوت قطن",
+    "مون لند بوكيت", "امبر بوكيت", "كومفي", "دايموند بوكيت",
+    "بيلو توب", "كونتور ميموري فوم",
+]
+
 
 # ---------------------------------------------------------------------------
-# LLM — initialised once at startup
+# Pydantic models
+# ---------------------------------------------------------------------------
+class ChatRequest(BaseModel):
+    message: str
+    chat_id: str
+
+
+# ---------------------------------------------------------------------------
+# Module-level singletons (populated in lifespan)
+# ---------------------------------------------------------------------------
+llm              = None
+_embedding_model = None
+_collection      = None
+
+
+# ---------------------------------------------------------------------------
+# LLM factory
 # ---------------------------------------------------------------------------
 def _build_llm():
     if LLM_PROVIDER == "ollama":
-        logger.info("LLM provider: Ollama (%s)", os.environ.get("OLLAMA_MODEL"))
+        logger.info("LLM provider: Ollama (%s)", get_secret("OLLAMA_MODEL", "qwen2.5:3b"))
         return ChatOllama(
-            model=os.environ.get("OLLAMA_MODEL", "qwen2.5:3b"),
-            base_url=os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434"),
+            model=get_secret("OLLAMA_MODEL", "qwen2.5:3b"),
+            base_url=get_secret("OLLAMA_BASE_URL", "http://localhost:11434"),
         )
     elif LLM_PROVIDER == "azure":
-        logger.info("LLM provider: Azure OpenAI (%s)", os.environ.get("AZURE_DEPLOYMENT_NAME"))
+        logger.info("LLM provider: Azure OpenAI (%s)", get_secret("AZURE_DEPLOYMENT_NAME"))
         return AzureChatOpenAI(
-            deployment_name=os.environ.get("AZURE_DEPLOYMENT_NAME", "gpt-4o"),
-            api_version=os.environ.get("AZURE_API_VERSION", "2024-12-01-preview"),
-            azure_endpoint=os.environ.get("AZURE_ENDPOINT"),   # ← matches .env
-            api_key=os.environ.get("AZURE_API_KEY"),
+            deployment_name=get_secret("AZURE_DEPLOYMENT_NAME", "gpt-4o"),
+            api_version=get_secret("AZURE_API_VERSION", "2024-12-01-preview"),
+            azure_endpoint=get_secret("AZURE_ENDPOINT"),
+            api_key=get_secret("AZURE_API_KEY"),
         )
     else:
-        warnings.warn(f"Unsupported LLM_PROVIDER: {LLM_PROVIDER}")
+        warnings.warn(f"Unsupported LLM_PROVIDER: {LLM_PROVIDER!r}")
         return None
 
-llm = _build_llm()
 
 # ---------------------------------------------------------------------------
-# RAG — ChromaDB client + embedding model as module-level singletons
+# Lifespan — init singletons once at startup, clean up on shutdown
 # ---------------------------------------------------------------------------
-logger.info("Loading embedding model (paraphrase-multilingual-MiniLM-L12-v2)…")
-_embedding_model = SentenceTransformer("paraphrase-multilingual-MiniLM-L12-v2")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    global llm, _embedding_model, _collection
 
-logger.info("Connecting to ChromaDB at %s…", Config.CHROMA_DB_DIR)
-_chroma_client = chromadb.PersistentClient(path=Config.CHROMA_DB_DIR)
-_collection    = _chroma_client.get_or_create_collection(name=Config.COLLECTION_NAME)
-logger.info("ChromaDB collection '%s' ready (%d chunks).",
-            Config.COLLECTION_NAME, _collection.count())
+    logger.info("-- Startup --")
+    llm = _build_llm()
 
+    logger.info("Loading embedding model...")
+    _embedding_model = SentenceTransformer("paraphrase-multilingual-MiniLM-L12-v2")
 
-def retrieve_context(query: str, n_results: int = 5) -> str:
-    """Embed the query and return the top-n matching chunks as a single string."""
-    clean_q  = normalize_arabic(query)
-    vector   = _embedding_model.encode([clean_q]).tolist()
-    results  = _collection.query(query_embeddings=vector, n_results=n_results)
-    docs     = results.get("documents", [[]])[0]
-    return "\n\n---\n\n".join(docs)
+    chroma_dir      = get_secret("CHROMA_DB_DIR", "./chroma_db")
+    collection_name = get_secret("COLLECTION_NAME", "cityfoam_rag")
+    logger.info("Connecting to ChromaDB at %s...", chroma_dir)
+    _chroma_client = chromadb.PersistentClient(path=chroma_dir)
+    _collection    = _chroma_client.get_or_create_collection(name=collection_name)
+    logger.info("ChromaDB '%s' ready (%d chunks).", collection_name, _collection.count())
+    init_mlflow(env=os.environ.get("ENV", "production"))
+    start_scheduler(collection=_collection)
+    logger.info("-- Ready --")
 
+    yield
 
-# ---------------------------------------------------------------------------
-# In-memory chat store
-# ---------------------------------------------------------------------------
-# Structure: { user_id: { chat_id: { "title": str, "messages": [...] } } }
-db = {"guest": {}}
+    stop_scheduler()
+    logger.info("-- Shutdown --")
 
-# ---------------------------------------------------------------------------
-# Routes — static
-# ---------------------------------------------------------------------------
-@app.route("/")
-def index():
-    return send_from_directory(app.static_folder, "index.html")
-
-@app.route("/<path:path>")
-def serve_static(path):
-    return send_from_directory(app.static_folder, path)
 
 # ---------------------------------------------------------------------------
-# Routes — API
+# FastAPI app
 # ---------------------------------------------------------------------------
-@app.route("/api/health", methods=["GET"])
-def health():
-    """Used by Docker health-check."""
-    return jsonify({
-        "status": "ok",
-        "llm_provider": LLM_PROVIDER,
-        "chroma_chunks": _collection.count(),
-    })
+app = FastAPI(title="CityFoam Support API", version="3.0.0", lifespan=lifespan)
+
+# Add CORS Middleware to allow requests from the browser
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Adjust this in production
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*", "X-Admin-Key"],  # Explicitly allow the custom admin key header
+)
+
+app.add_middleware(LatencyMiddleware)
+app.include_router(admin_router)
+
+# Dashboard — served directly from app root (not from static/)
+_dashboard_path = os.path.join(os.path.dirname(__file__), "dashboard.html")
+
+@app.get("/dashboard", include_in_schema=False)
+async def serve_dashboard():
+    return FileResponse(_dashboard_path)
+
+# Static files
+static_dir = os.path.join(os.path.dirname(__file__), "static")
+if os.path.isdir(static_dir):
+    app.mount("/static", StaticFiles(directory=static_dir), name="static")
+
+    @app.get("/", include_in_schema=False)
+    async def serve_index():
+        return FileResponse(os.path.join(static_dir, "index.html"))
+
+    @app.get("/{full_path:path}", include_in_schema=False)
+    async def serve_spa(full_path: str):
+        fp = os.path.join(static_dir, full_path)
+        return FileResponse(fp) if os.path.isfile(fp) else FileResponse(
+            os.path.join(static_dir, "index.html")
+        )
 
 
-@app.route("/api/config", methods=["GET"])
-def get_config():
-    return jsonify({
-        "companyName": COMPANY_NAME,
-        "theme": os.environ.get("THEME", "dark"),
-        "enableSidebar": os.environ.get("ENABLE_SIDEBAR", "true").lower() == "true",
-    })
+# ---------------------------------------------------------------------------
+# Optional API-key guard (dependency)
+# ---------------------------------------------------------------------------
+def _optional_api_key(x_api_key: Optional[str] = Header(default=None)):
+    if REQUIRE_API_KEY and x_api_key != CITYFOAM_SECRET_KEY:
+        raise HTTPException(status_code=403, detail="Invalid API key.")
 
 
-@app.route("/api/chats", methods=["GET"])
-def get_chats():
-    user_id = "guest"
-    chats = [
-        {"id": cid, "title": info["title"]}
-        for cid, info in db.get(user_id, {}).items()
-    ]
-    chats.reverse()   # newest first
-    return jsonify({"status": "success", "chats": chats})
+# ---------------------------------------------------------------------------
+# SQLite Chat Store
+# ---------------------------------------------------------------------------
+import sqlite3
+from contextlib import contextmanager
+
+CHATS_DB_PATH = "chats.db"
+
+def _init_chats_db():
+    with sqlite3.connect(CHATS_DB_PATH) as conn:
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS chats (id TEXT PRIMARY KEY, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, data TEXT)"
+        )
+        conn.commit()
+
+_init_chats_db()
+
+@contextmanager
+def _chat_db():
+    conn = sqlite3.connect(CHATS_DB_PATH, check_same_thread=False)
+    try:
+        yield conn
+    finally:
+        conn.close()
+
+def get_all_chats():
+    with _chat_db() as conn:
+        rows = conn.execute("SELECT id, data FROM chats ORDER BY created_at DESC").fetchall()
+        return [(row[0], json.loads(row[1])) for row in rows]
+
+def get_chat(chat_id: str):
+    with _chat_db() as conn:
+        row = conn.execute("SELECT data FROM chats WHERE id = ?", (chat_id,)).fetchone()
+        return json.loads(row[0]) if row else None
+
+def save_chat(chat_id: str, data: dict):
+    with _chat_db() as conn:
+        conn.execute("INSERT OR REPLACE INTO chats (id, data) VALUES (?, ?)", (chat_id, json.dumps(data)))
+        conn.commit()
 
 
-@app.route("/api/chats", methods=["POST"])
-def create_chat():
-    user_id = "guest"
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+def detect_language(text: str) -> str:
+    return "ARABIC" if re.search(r"[\u0600-\u06FF]", text) else "ENGLISH"
+
+
+async def optimize_query_async(raw_query: str) -> str:
+    """LLM pre-processes the query: strips filler, fixes typos, outputs Arabic."""
+    if not llm:
+        return raw_query
+    optimizer_prompt = (
+        "You are a search-engine query optimizer for a furniture and mattress store.\n"
+        "- Strip conversational filler.\n"
+        f"- Fix typos using this catalog: {VALID_CATALOG}\n"
+        "- Output ARABIC keywords only. No explanation."
+    )
+    try:
+        result = await llm.ainvoke([
+            SystemMessage(content=optimizer_prompt),
+            HumanMessage(content=normalize_arabic(raw_query)),
+        ])
+        optimized = result.content.strip()
+        logger.info("Query optimizer: %r -> %r", raw_query[:60], optimized[:60])
+        return optimized or raw_query
+    except Exception as exc:
+        logger.warning("Query optimizer failed (%s); using raw query.", exc)
+        return raw_query
+
+
+def retrieve_and_evaluate(query: str, n_results: int = 5):
+    """Embed query, query ChromaDB, score retrieval quality."""
+    vector  = _embedding_model.encode([normalize_arabic(query)]).tolist()
+    results = _collection.query(
+        query_embeddings=vector,
+        n_results=n_results,
+        include=["documents", "distances"],
+    )
+    docs      = results.get("documents", [[]])[0]
+    distances = results.get("distances",  [[]])[0]
+    return evaluate_retrieval(docs, distances, query=query)
+
+
+# ---------------------------------------------------------------------------
+# API routes
+# ---------------------------------------------------------------------------
+@app.get("/api/health")
+async def health():
+    return {
+        "status":        "ok",
+        "llm_provider":  LLM_PROVIDER,
+        "chroma_chunks": _collection.count() if _collection else 0,
+    }
+
+
+@app.get("/api/config")
+async def get_config():
+    return {
+        "companyName":   COMPANY_NAME,
+        "theme":         get_secret("THEME", "dark"),
+        "enableSidebar": get_secret("ENABLE_SIDEBAR", "true").lower() == "true",
+    }
+
+
+@app.get("/api/chats")
+async def get_chats():
+    chats = [{"id": cid, "title": data["title"]} for cid, data in get_all_chats()]
+    return {"status": "success", "chats": chats}
+
+
+@app.post("/api/chats")
+async def create_chat():
     chat_id = str(uuid.uuid4())
-    db[user_id][chat_id] = {
+    save_chat(chat_id, {
         "title": "New Chat",
         "messages": [
-            {"sender": "ai", "text": f"Hello! I'm the {COMPANY_NAME} support assistant. How can I help you today?"}
+            {"sender": "ai",
+             "text": f"Hello! I'm the {COMPANY_NAME} support assistant. How can I help you today?"}
         ],
-    }
-    return jsonify({"status": "success", "chat_id": chat_id, "title": "New Chat"})
+    })
+    return {"status": "success", "chat_id": chat_id, "title": "New Chat"}
 
 
-@app.route("/api/chats/<chat_id>", methods=["GET"])
-def get_chat_history(chat_id):
-    user_id = "guest"
-    if chat_id not in db.get(user_id, {}):
-        return jsonify({"status": "error", "error": "Chat not found"}), 404
-    return jsonify({"status": "success", "messages": db[user_id][chat_id]["messages"]})
+@app.get("/api/chats/{chat_id}")
+async def get_chat_history(chat_id: str):
+    chat_data = get_chat(chat_id)
+    if not chat_data:
+        raise HTTPException(status_code=404, detail="Chat not found.")
+    return {"status": "success", "messages": chat_data["messages"]}
 
 
-@app.route("/api/chat/stream", methods=["POST"])
-def chat_stream():
+# ---------------------------------------------------------------------------
+# Streaming chat — the main endpoint
+# ---------------------------------------------------------------------------
+@app.post("/api/chat/stream")
+async def chat_stream(
+    body:             ChatRequest,
+    background_tasks: BackgroundTasks,
+    _key:             None = Depends(_optional_api_key),
+):
     """
-    RAG-augmented streaming chat endpoint.
+    RAG-augmented streaming chat.
 
     Flow:
-      1. Retrieve relevant KB chunks for the user query.
-      2. Build a proper LangChain message list:
-             [SystemMessage(rag_context), ...history..., HumanMessage(query)]
-      3. Stream the LLM response chunk-by-chunk via SSE.
+      1. Detect user language.
+      2. Async query optimizer.
+      3. RAG retrieval + quality evaluation.
+      4. Build LangChain messages.
+      5. Async-stream LLM response via SSE.
+      6. Log query metadata to SQLite (background task).
     """
-    data         = request.get_json(silent=True) or {}
-    user_message = data.get("message", "").strip()
-    chat_id      = data.get("chat_id", "")
-    user_id      = "guest"
+    user_message = body.message.strip()
+    chat_id      = body.chat_id
 
     if not user_message:
-        return jsonify({"error": "Empty message"}), 400
-    if not chat_id or chat_id not in db.get(user_id, {}):
-        return jsonify({"error": "Invalid chat_id"}), 400
+        raise HTTPException(status_code=400, detail="Empty message.")
+    
+    chat_data = get_chat(chat_id)
+    if not chat_data:
+        raise HTTPException(status_code=400, detail="Invalid chat_id.")
     if not llm:
-        return jsonify({"error": "LLM not configured"}), 500
+        raise HTTPException(status_code=500, detail="LLM not configured.")
 
-    history = db[user_id][chat_id]["messages"]
+    history = chat_data["messages"]
 
-    # --- Auto-title on first real message ---
+    # Auto-title
     title_updated = False
-    if db[user_id][chat_id]["title"] == "New Chat":
-        db[user_id][chat_id]["title"] = (user_message[:30] + "…") if len(user_message) > 30 else user_message
+    if chat_data["title"] == "New Chat":
+        chat_data["title"] = (
+            user_message[:30] + "..." if len(user_message) > 30 else user_message
+        )
         title_updated = True
 
-    # --- Append user message to history ---
     history.append({"sender": "user", "text": user_message})
+    save_chat(chat_id, chat_data)
 
-    # --- RAG retrieval ---
-    context_string = retrieve_context(user_message)
-    logger.info("RAG: retrieved %d chars of context for query: %r",
-                len(context_string), user_message[:60])
+    # Language detection
+    target_language = detect_language(user_message)
 
-    # --- Build LangChain message list ---
+    # Query optimization
+    optimized_query = await optimize_query_async(user_message)
+
+    # RAG retrieval + quality scoring
+    retrieval      = retrieve_and_evaluate(optimized_query)
+    context_string = retrieval.context_str
+
+    logger.info(
+        "RAG: score=%.3f  poor=%s  chars=%d  query=%r",
+        retrieval.quality_score, retrieval.is_poor,
+        len(context_string), optimized_query[:60],
+    )
+
+    # Build LangChain messages
     system_content = f"""You are the official Customer Support AI Assistant for {COMPANY_NAME}.
-Your primary function is to provide accurate, helpful answers based STRICTLY on the Knowledge Base below.
+Answer accurately based STRICTLY on the Knowledge Base below.
 
 CRITICAL RULES:
-1. ZERO HALLUCINATION — only state facts found in the KNOWLEDGE BASE CONTEXT.
-2. UNKNOWN ANSWERS — if the answer is not in the KB, politely say so and offer to connect the customer with a human agent.
-3. BILINGUAL — always reply in the EXACT SAME LANGUAGE the customer used (Arabic or English).
-4. OCR TYPOS — the context may contain PDF extraction artifacts; interpret them gracefully.
-5. CURRENCY — prices are in Egyptian Pounds (EGP) unless stated otherwise.
+1. ZERO HALLUCINATION - only use facts from the KNOWLEDGE BASE CONTEXT.
+2. UNKNOWN ANSWERS - if not in KB, say so and offer a human agent.
+3. LANGUAGE LOCK - reply ENTIRELY in {target_language}. No mixing.
+4. CURRENCY - prices are in Egyptian Pounds (EGP).
+5. OCR TYPOS - interpret PDF artifacts gracefully.
 
 --- KNOWLEDGE BASE CONTEXT ---
 {context_string}
 --- END OF CONTEXT ---"""
 
     lc_messages = [SystemMessage(content=system_content)]
-
-    # Inject trimmed conversation history (exclude the message we just appended)
-    prior_history = history[:-1]
-    if len(prior_history) > 10:
-        # Keep first 2 (opening pleasantries) + last 8 (recent context)
-        prior_history = prior_history[:2] + prior_history[-8:]
-
-    for msg in prior_history:
+    prior = history[:-1]
+    if len(prior) > 10:
+        prior = prior[:2] + prior[-8:]
+    for msg in prior:
         if msg["sender"] == "user":
             lc_messages.append(HumanMessage(content=msg["text"]))
         elif msg["sender"] == "ai":
             lc_messages.append(AIMessage(content=msg["text"]))
-
-    # Current user turn
     lc_messages.append(HumanMessage(content=user_message))
 
-    # --- SSE streaming generator ---
-    def generate():
-        ai_response_text = ""
+    request_start = time.perf_counter()
+
+    async def event_generator():
+        ai_text = ""
         try:
-            for chunk in llm.stream(lc_messages):
+            async for chunk in llm.astream(lc_messages):
                 content = chunk.content
                 if content:
-                    ai_response_text += content
+                    ai_text += content
                     yield f"data: {json.dumps({'chunk': content})}\n\n"
 
-            # Persist AI reply
-            history.append({"sender": "ai", "text": ai_response_text})
+            history.append({"sender": "ai", "text": ai_text})
+            save_chat(chat_id, chat_data)
 
             if title_updated:
-                yield f"data: {json.dumps({'title': db[user_id][chat_id]['title']})}\n\n"
+                yield f"data: {json.dumps({'title': chat_data['title']})}\n\n"
 
             yield "data: [DONE]\n\n"
 
@@ -263,12 +446,39 @@ CRITICAL RULES:
             logger.exception("LLM streaming error: %s", exc)
             yield f"data: {json.dumps({'error': str(exc)})}\n\n"
 
-    return Response(stream_with_context(generate()), content_type="text/event-stream")
+        finally:
+            elapsed_ms = (time.perf_counter() - request_start) * 1000
+            entry = QueryLogEntry(
+                chat_id         = chat_id,
+                raw_query       = user_message,
+                optimized_query = optimized_query,
+                language        = target_language,
+                response_chars  = len(ai_text),
+                latency_ms      = elapsed_ms,
+                rag_score       = retrieval.quality_score,
+                rag_warning     = retrieval.is_poor,
+            )
+            # Log to SQLite (fast, local)
+            background_tasks.add_task(log_query, entry)
+            # Log to MLflow / Azure ML (async-safe background task)
+            background_tasks.add_task(
+                log_query_to_mlflow,
+                chat_id         = chat_id,
+                raw_query       = user_message,
+                optimized_query = optimized_query,
+                language        = target_language,
+                rag_score       = retrieval.quality_score,
+                rag_poor        = retrieval.is_poor,
+                latency_ms      = elapsed_ms,
+                response_chars  = len(ai_text),
+            )
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 
 # ---------------------------------------------------------------------------
-# Entry-point (dev only — production uses gunicorn via entrypoint.sh)
+# Dev entry-point
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":
-    logger.info("Starting dev server on port %d (provider: %s)", PORT, LLM_PROVIDER)
-    app.run(host="0.0.0.0", port=PORT, debug=True)
+    import uvicorn
+    uvicorn.run("server:app", host="0.0.0.0", port=PORT, reload=True)

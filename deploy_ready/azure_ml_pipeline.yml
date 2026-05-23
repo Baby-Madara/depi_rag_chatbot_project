@@ -1,0 +1,122 @@
+# =============================================================================
+# CityFoam — Azure ML Pipeline
+# =============================================================================
+# This pipeline covers the full MLOps lifecycle:
+#   Step 1: ingest       — chunk + embed data files → ChromaDB
+#   Step 2: experiment   — RAG hyperparameter sweep → best config logged
+#   Step 3: register     — log embedding model to Azure ML Model Registry
+#   Step 4: evaluate     — run eval queries against best config, log to AML
+#
+# Trigger: manually via Azure ML Studio, AML CLI, or GitHub Actions.
+#
+# Prerequisites
+# -------------
+#   az login
+#   az ml workspace show --name <WS> --resource-group <RG>
+#   az ml environment create -f azure_ml_environment.yml
+#
+# Run
+# ---
+#   az ml job create -f azure_ml_pipeline.yml \
+#     --workspace-name <WS> \
+#     --resource-group <RG>
+# =============================================================================
+
+$schema: https://azuremlschemas.azureedge.net/latest/pipelineJob.schema.json
+
+type: pipeline
+display_name: cityfoam-rag-pipeline
+description: "CityFoam RAG ingestion, hyperparameter sweep, model registration"
+experiment_name: cityfoam-rag-experiments
+
+settings:
+  default_compute: azureml:cpu-cluster      # replace with your compute name
+  default_datastore: azureml:workspaceblobstore
+  continue_on_step_failure: false
+
+# ---------------------------------------------------------------------------
+# Input datasets registered in the Azure ML datastore
+# ---------------------------------------------------------------------------
+inputs:
+  data_files:
+    type: uri_folder
+    path: azureml:cityfoam-knowledge-base@latest   # register your data/ folder
+
+# ---------------------------------------------------------------------------
+# Jobs
+# ---------------------------------------------------------------------------
+jobs:
+
+  # ── Step 1: Ingest ─────────────────────────────────────────────────────
+  ingest:
+    type: command
+    display_name: "Ingest & embed knowledge base"
+    code: .
+    command: >
+      python ingest.py
+    environment: azureml:cityfoam-env@latest
+    inputs:
+      data_dir: ${{ parent.inputs.data_files }}
+    outputs:
+      chroma_db:
+        type: uri_folder
+        mode: rw_mount
+    environment_variables:
+      DATA_DIR:        ${{ inputs.data_dir }}
+      CHROMA_DB_DIR:   ${{ outputs.chroma_db }}
+      COLLECTION_NAME: cityfoam_rag
+
+  # ── Step 2: RAG Hyperparameter Sweep ───────────────────────────────────
+  experiment:
+    type: command
+    display_name: "RAG hyperparameter sweep"
+    code: .
+    command: >
+      python run_rag_experiment.py
+    environment: azureml:cityfoam-env@latest
+    inputs:
+      chroma_db: ${{ parent.jobs.ingest.outputs.chroma_db }}
+    outputs:
+      sweep_results:
+        type: uri_folder
+        mode: rw_mount
+    environment_variables:
+      CHROMA_DB_DIR:         ${{ inputs.chroma_db }}
+      MLFLOW_TRACKING_URI:   ${{ azureml://tracking_uri }}
+      COLLECTION_NAME:       cityfoam_rag
+    depends_on:
+      - ingest
+
+  # ── Step 3: Register embedding model ───────────────────────────────────
+  register_model:
+    type: command
+    display_name: "Register embedding model"
+    code: .
+    command: >
+      python model_registry.py register
+    environment: azureml:cityfoam-env@latest
+    environment_variables:
+      MLFLOW_TRACKING_URI: ${{ azureml://tracking_uri }}
+    depends_on:
+      - experiment
+
+  # ── Step 4: Final eval report ──────────────────────────────────────────
+  evaluate:
+    type: command
+    display_name: "RAG evaluation report"
+    code: .
+    command: >
+      python run_rag_experiment.py --eval-only
+    environment: azureml:cityfoam-env@latest
+    inputs:
+      chroma_db: ${{ parent.jobs.ingest.outputs.chroma_db }}
+    outputs:
+      eval_report:
+        type: uri_folder
+        mode: rw_mount
+    environment_variables:
+      CHROMA_DB_DIR:       ${{ inputs.chroma_db }}
+      MLFLOW_TRACKING_URI: ${{ azureml://tracking_uri }}
+      COLLECTION_NAME:     cityfoam_rag
+    depends_on:
+      - register_model
