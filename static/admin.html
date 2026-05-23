@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CityFoam Admin Panel</title>
+    <link rel="stylesheet" href="/static/admin.css">
+</head>
+<body>
+
+    <!-- 🔒 فحص تسجيل الدخول – يُضاف قبل أي محتوى -->
+    <script>
+        if (!sessionStorage.getItem('admin_token')) {
+            window.location.replace('/static/login.html');
+        }
+    </script>
+
+    <!-- شريط التنقل العلوي -->
+    <div class="top-nav">
+        <a href="/" class="nav-btn">← Back to Chat</a>
+        <a href="/static/dashboard.html" class="nav-btn">📊 Dashboard</a>
+    </div>
+
+    <div class="admin-container">
+        <h1>CityFoam RAG Admin Panel</h1>
+
+        <div class="admin-card">
+            <h2>Upload New Knowledge File</h2>
+            <input type="file" id="fileInput" accept=".pdf,.docx,.xlsx,.xls">
+            <button id="uploadBtn">Upload File</button>
+        </div>
+
+        <div class="admin-card">
+            <h2>Knowledge Base Refresh</h2>
+            <button id="retrainBtn">Start Retraining</button>
+            <div id="statusBox" style="font-weight: bold; margin-top: 10px;">Waiting...</div>
+        </div>
+
+        <div class="admin-card">
+            <h2>Evaluation Metrics</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Metric</th>
+                        <th>Previous</th>
+                        <th>Current</th>
+                        <th>Change</th>
+                    </tr>
+                </thead>
+                <tbody id="metricsTable">
+                    <tr> <td>BLEU</td> <td>0%</td> <td>0%</td> <td>0%</td> </tr>
+                    <tr> <td>ROUGE</td> <td>0%</td> <td>0%</td> <td>0%</td> </tr>
+                    <tr> <td>Hit Rate</td> <td>0%</td> <td>0%</td> <td>0%</td> </tr>
+                    <tr> <td>Latency</td> <td>0s</td> <td>0s</td> <td>0s</td> </tr>
+                    <tr> <td>Semantic Similarity</td> <td>0%</td> <td>0%</td> <td>0%</td> </tr>
+                    <tr> <td>Hallucination Rate</td> <td>0%</td> <td>0%</td> <td>0%</td> </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <script src="/static/admin.js"></script>
+</body>
+</html>

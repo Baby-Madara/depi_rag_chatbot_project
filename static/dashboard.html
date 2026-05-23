@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CityFoam Dashboard | AI vs Human</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: #f4f6f9;
+      color: #1e293b;
+    }
+    .top-nav {
+      display: flex;
+      justify-content: flex-end;
+      gap: 15px;
+      padding: 15px 30px;
+      background: #fff;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.05);
+    }
+    .nav-btn {
+      text-decoration: none;
+      background: #1e293b;
+      color: white;
+      padding: 10px 20px;
+      border-radius: 8px;
+      font-weight: 500;
+      transition: background 0.2s;
+    }
+    .nav-btn:hover { background: #334155; }
+    .container {
+      max-width: 1300px;
+      margin: auto;
+      padding: 30px 20px;
+    }
+    h1 {
+      margin-bottom: 10px;
+      color: #0f172a;
+    }
+    .subtitle {
+      color: #64748b;
+      margin-bottom: 30px;
+    }
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 20px;
+      margin-bottom: 40px;
+    }
+    .kpi-card {
+      background: #ffffff;
+      border-radius: 16px;
+      padding: 24px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+      display: flex;
+      flex-direction: column;
+    }
+    .kpi-card.bot { border-left: 4px solid #6366f1; }
+    .kpi-card.human { border-left: 4px solid #059669; }
+    .kpi-label { font-size: 0.95rem; color: #64748b; margin-bottom: 8px; }
+    .kpi-value { font-size: 2.2rem; font-weight: 700; color: #0f172a; }
+    .kpi-sub { font-size: 0.9rem; margin-top: 10px; color: #94a3b8; }
+    .charts-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 30px;
+      margin-bottom: 40px;
+    }
+    .chart-card {
+      background: #ffffff;
+      border-radius: 16px;
+      padding: 24px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+    }
+    .chart-card h4 {
+      margin-bottom: 15px;
+    }
+    canvas { max-height: 280px; }
+    .comparison-table {
+      background: #ffffff;
+      border-radius: 16px;
+      padding: 24px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+      overflow-x: auto;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    th {
+      text-align: left;
+      padding: 14px 16px;
+      background: #f8fafc;
+      font-weight: 600;
+      color: #1e293b;
+    }
+    td {
+      padding: 14px 16px;
+      border-bottom: 1px solid #f1f5f9;
+    }
+    .advantage-bot { color: #6366f1; font-weight: 600; }
+    .advantage-human { color: #059669; font-weight: 600; }
+    .advantage-draw { color: #64748b; font-weight: 600; }
+    .loading { text-align: center; color: #64748b; padding: 40px; }
+    @media (max-width: 768px) {
+      .charts-row { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="top-nav">
+    <a href="/" class="nav-btn">💬 Chat</a>
+    <a href="/static/admin.html" class="nav-btn">⚙️ Admin</a>
+  </div>
+
+  <div class="container">
+    <h1>📊 CityFoam Performance Dashboard</h1>
+    <p class="subtitle">Live metrics comparing AI chatbot vs Human customer support benchmarks.</p>
+
+    <div class="kpi-grid" id="kpiContainer">
+      <div class="loading">Loading metrics...</div>
+    </div>
+
+    <div class="charts-row">
+      <div class="chart-card">
+        <h4>⏱️ Avg Response Time (ms)</h4>
+        <canvas id="latencyChart"></canvas>
+      </div>
+      <div class="chart-card">
+        <h4>🎯 Accuracy (No Hallucination)</h4>
+        <canvas id="accuracyChart"></canvas>
+      </div>
+    </div>
+
+    <div class="charts-row">
+      <div class="chart-card">
+        <h4>😊 User Satisfaction (%)</h4>
+        <canvas id="satisfactionChart"></canvas>
+      </div>
+      <div class="chart-card">
+        <h4>🔍 Retrieval Quality (%)</h4>
+        <canvas id="retrievalChart"></canvas>
+      </div>
+    </div>
+
+    <div class="comparison-table">
+      <h4 style="margin-bottom: 20px;">📋 Full Comparison: Bot vs Human</h4>
+      <table id="comparisonTable">
+        <thead>
+          <tr>
+            <th>Metric</th>
+            <th>CityFoam Bot</th>
+            <th>Human Support (Avg)</th>
+            <th>Advantage</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+
+  <script>
+    // Human benchmarks (industry averages)
+    const HUMAN = {
+      avg_latency_ms: 30000,      // 30 sec
+      error_rate: 1,              // 1% -> accuracy 99%
+      satisfaction: 85,           // 85% CSAT
+      retrieval_quality: 100,     // agents have perfect knowledge
+      availability: 33            // % uptime (8h out of 24h ~33%)
+    };
+
+    const BOT_COLOR = '#6366f1';   // Indigo
+    const HUMAN_COLOR = '#059669'; // Teal
+
+    // Plugin: data labels inside bars / doughnut (white text)
+    const dataLabelsPlugin = {
+      id: 'dataLabelsInside',
+      afterDraw(chart) {
+        const ctx = chart.ctx;
+        ctx.save();
+        chart.data.datasets.forEach((dataset, dsIdx) => {
+          const meta = chart.getDatasetMeta(dsIdx);
+          if (!meta || !meta.data) return;
+          meta.data.forEach((element, idx) => {
+            const value = dataset.data[idx];
+            if (value == null) return;
+
+            if (chart.config.type === 'bar') {
+              const { x, y } = element.tooltipPosition();
+              const barHeight = element.height;
+              const barCenterY = element.y + barHeight / 2;
+              ctx.font = 'bold 14px "Segoe UI"';
+              ctx.textAlign = 'center';
+              ctx.textBaseline = 'middle';
+              ctx.fillStyle = '#ffffff';
+              if (barHeight < 20) {
+                ctx.fillStyle = '#1e293b';
+                ctx.fillText(value, x, y - 10);
+              } else {
+                ctx.fillText(value, x, barCenterY);
+              }
+            } else if (chart.config.type === 'doughnut') {
+              const { x, y } = element.tooltipPosition();
+              ctx.font = 'bold 14px "Segoe UI"';
+              ctx.fillStyle = '#ffffff';
+              ctx.textAlign = 'center';
+              ctx.textBaseline = 'middle';
+              ctx.fillText(value + '%', x, y);
+            }
+          });
+        });
+        ctx.restore();
+      }
+    };
+
+    Chart.register(dataLabelsPlugin);
+
+    async function fetchMetrics() {
+      try {
+        const res = await fetch('/api/dashboard/metrics');
+        if (!res.ok) throw new Error('Failed');
+        return await res.json();
+      } catch (e) {
+        console.error(e);
+        return null;
+      }
+    }
+
+    function renderKPIs(bot) {
+      const container = document.getElementById('kpiContainer');
+      const botLat = (bot.avg_latency_ms / 1000).toFixed(1) + 's';
+      const humanLat = (HUMAN.avg_latency_ms / 1000).toFixed(1) + 's';
+      const botAcc = (100 - (bot.error_rate || 0)).toFixed(1) + '%';
+      const humanAcc = (100 - HUMAN.error_rate).toFixed(1) + '%';
+      const botSat = bot.user_satisfaction_rate !== null ? bot.user_satisfaction_rate.toFixed(1) + '%' : 'N/A';
+      const humanSat = HUMAN.satisfaction + '%';
+      const botRet = (bot.avg_retrieval_quality || 0).toFixed(1) + '%';
+      const humanRet = HUMAN.retrieval_quality + '%';
+
+      const cards = [
+        { label: '⏱️ Bot Avg Latency', value: botLat, sub: `${bot.avg_latency_ms} ms`, type: 'bot' },
+        { label: '🧑 Human Avg Latency', value: humanLat, sub: 'Industry ~30s', type: 'human' },
+        { label: '🎯 Bot Accuracy (No Hallucination)', value: botAcc, sub: `Error rate: ${bot.error_rate || 0}%`, type: 'bot' },
+        { label: '🧠 Human Accuracy', value: humanAcc, sub: 'Error rate ~1%', type: 'human' },
+        { label: '😊 Bot Satisfaction', value: botSat, sub: botSat === 'N/A' ? 'Not enough ratings' : `${bot.total_positive || 0} positive`, type: 'bot' },
+        { label: '💬 Human Satisfaction', value: humanSat, sub: 'Industry average', type: 'human' },
+        { label: '🔍 Bot Retrieval Quality', value: botRet, sub: 'Vector search accuracy', type: 'bot' },
+        { label: '📖 Human Retrieval Quality', value: humanRet, sub: 'Perfect knowledge base', type: 'human' }
+      ];
+
+      container.innerHTML = cards.map(c => `
+        <div class="kpi-card ${c.type}">
+          <div class="kpi-label">${c.label}</div>
+          <div class="kpi-value">${c.value}</div>
+          <div class="kpi-sub">${c.sub}</div>
+        </div>
+      `).join('');
+    }
+
+    function createCharts(bot) {
+      Chart.helpers.each(Chart.instances, inst => inst.destroy());
+
+      const botLat = bot.avg_latency_ms || 0;
+      const humanLat = HUMAN.avg_latency_ms;
+      const botAcc = 100 - (bot.error_rate || 0);
+      const humanAcc = 100 - HUMAN.error_rate;
+      const botSat = bot.user_satisfaction_rate !== null ? bot.user_satisfaction_rate : 0;
+      const humanSat = HUMAN.satisfaction;
+      const botRet = bot.avg_retrieval_quality || 0;
+      const humanRet = HUMAN.retrieval_quality;
+
+      new Chart(document.getElementById('latencyChart'), {
+        type: 'bar',
+        data: {
+          labels: ['Bot', 'Human'],
+          datasets: [{
+            label: 'Avg Response Time (ms)',
+            data: [botLat, humanLat],
+            backgroundColor: [BOT_COLOR, HUMAN_COLOR],
+            borderRadius: 8
+          }]
+        },
+        options: {
+          responsive: true,
+          plugins: { legend: { display: false } },
+          scales: { y: { beginAtZero: true, title: { display: true, text: 'Milliseconds' } } }
+        }
+      });
+
+      new Chart(document.getElementById('accuracyChart'), {
+        type: 'bar',
+        data: {
+          labels: ['Bot', 'Human'],
+          datasets: [{
+            label: 'Accuracy (No Hallucination) %',
+            data: [botAcc, humanAcc],
+            backgroundColor: [BOT_COLOR, HUMAN_COLOR],
+            borderRadius: 8
+          }]
+        },
+        options: {
+          responsive: true,
+          plugins: { legend: { display: false } },
+          scales: { y: { beginAtZero: true, max: 100, title: { display: true, text: '%' } } }
+        }
+      });
+
+      // Doughnut with Bot left, Human right
+      new Chart(document.getElementById('satisfactionChart'), {
+        type: 'doughnut',
+        data: {
+          labels: ['Bot', 'Human'],
+          datasets: [{
+            data: [botSat || 0, humanSat],
+            backgroundColor: [BOT_COLOR, HUMAN_COLOR],
+            borderWidth: 0
+          }]
+        },
+        options: {
+          responsive: true,
+          rotation: -90,  // start from left
+          plugins: { legend: { position: 'bottom' } }
+        }
+      });
+
+      new Chart(document.getElementById('retrievalChart'), {
+        type: 'bar',
+        data: {
+          labels: ['Retrieval Quality'],
+          datasets: [
+            { label: 'Bot', data: [botRet], backgroundColor: BOT_COLOR },
+            { label: 'Human (ideal)', data: [humanRet], backgroundColor: HUMAN_COLOR }
+          ]
+        },
+        options: {
+          responsive: true,
+          plugins: { legend: { position: 'bottom' } },
+          scales: { y: { beginAtZero: true, max: 100 } }
+        }
+      });
+    }
+
+    // Advantage logic: lower_better or higher_better
+    function determineAdvantage(botVal, humanVal, metricType) {
+      if (botVal === 'N/A' || humanVal === 'N/A') return 'Draw';
+      const b = parseFloat(botVal);
+      const h = parseFloat(humanVal);
+      if (isNaN(b) || isNaN(h)) return 'Draw';
+
+      if (metricType === 'lower_better') {
+        if (b < h - (h * 0.1)) return 'Bot';
+        if (h < b - (b * 0.1)) return 'Human';
+        return 'Draw';
+      } else {
+        if (b > h + (h * 0.05)) return 'Bot';
+        if (h > b + (b * 0.05)) return 'Human';
+        return 'Draw';
+      }
+    }
+
+    function renderTable(bot) {
+      const tbody = document.querySelector('#comparisonTable tbody');
+      const botLat = (bot.avg_latency_ms / 1000).toFixed(1);
+      const humanLat = (HUMAN.avg_latency_ms / 1000).toFixed(1);
+      const botAcc = (100 - (bot.error_rate || 0)).toFixed(1);
+      const humanAcc = (100 - HUMAN.error_rate).toFixed(1);
+      const botSat = bot.user_satisfaction_rate !== null ? bot.user_satisfaction_rate.toFixed(1) : null;
+      const humanSat = HUMAN.satisfaction;
+      const botRet = (bot.avg_retrieval_quality || 0).toFixed(1);
+      const humanRet = HUMAN.retrieval_quality;
+      const botTokens = bot.total_tokens_used ? bot.total_tokens_used.toLocaleString() : 'N/A';
+
+      // Availability: bot = 100% (24/7), human = HUMAN.availability% (e.g., 33%)
+      const botAvail = '100%';
+      const humanAvail = HUMAN.availability + '%';
+
+      const rows = [
+        { 
+          metric: 'Avg Response Time', 
+          bot: botLat + 's', human: humanLat + 's',
+          advantage: determineAdvantage(botLat, humanLat, 'lower_better')
+        },
+        { 
+          metric: 'Accuracy (No Hallucination)', 
+          bot: botAcc + '%', human: humanAcc + '%',
+          advantage: determineAdvantage(botAcc, humanAcc, 'higher_better')
+        },
+        { 
+          metric: 'User Satisfaction', 
+          bot: botSat !== null ? botSat + '%' : 'N/A', human: humanSat + '%',
+          advantage: botSat !== null ? determineAdvantage(botSat, humanSat, 'higher_better') : 'Draw'
+        },
+        { 
+          metric: 'Retrieval Quality', 
+          bot: botRet + '%', human: humanRet + '%',
+          advantage: determineAdvantage(botRet, humanRet, 'higher_better')
+        },
+        { 
+          metric: 'Availability (Uptime)', 
+          bot: botAvail, human: humanAvail,
+          advantage: 'Bot'   // 24/7 vs limited working hours
+        },
+        { 
+          metric: 'Total Tokens Used', 
+          bot: botTokens, human: 'N/A',
+          advantage: 'Human'   // humans do not consume tokens → human advantage
+        },
+        { 
+          metric: 'Estimated Monthly Cost', 
+          bot: '~$100 (server)', human: '~$3,000 per agent',
+          advantage: determineAdvantage(100, 3000, 'lower_better') // Bot clearly wins
+        }
+      ];
+
+      tbody.innerHTML = rows.map(r => {
+        let cls = '';
+        if (r.advantage === 'Bot') cls = 'advantage-bot';
+        else if (r.advantage === 'Human') cls = 'advantage-human';
+        else cls = 'advantage-draw';
+        return `
+        <tr>
+          <td>${r.metric}</td>
+          <td>${r.bot}</td>
+          <td>${r.human}</td>
+          <td class="${cls}">${r.advantage}</td>
+        </tr>`;
+      }).join('');
+    }
+
+    (async () => {
+      const bot = await fetchMetrics();
+      if (!bot || !bot.total_interactions) {
+        document.getElementById('kpiContainer').innerHTML = '<div class="loading">No data yet. Start chatting to populate metrics.</div>';
+        document.querySelector('#comparisonTable tbody').innerHTML = '<tr><td colspan="4">No data</td></tr>';
+        return;
+      }
+      renderKPIs(bot);
+      createCharts(bot);
+      renderTable(bot);
+    })();
+  </script>
+</body>
+</html>
