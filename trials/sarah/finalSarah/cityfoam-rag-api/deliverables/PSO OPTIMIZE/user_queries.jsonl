@@ -1,0 +1,26 @@
+{"query": "do you have contour memory pillows","expected": "Contour memory pillows"}
+{"query": "what is the difference between the contour memory foam and the long contour pillow in term of use and price?","expected": "contour memory foam, long contour pillow"}
+{"query": "في شحن؟","expected": "شحن"}
+{"query": "ايه انواع المراتب المتاحه ونوع الاسفنج؟ ","expected": "مراتب" }
+{"query": "لو عايزه استرجع منتج في مشكله ","expected": "منتج"}
+{"query": "what is number of hotline","expected": "[رقم التواصل]"}
+{"query": "what is number of customer service?","expected": "[ ارقام التواصل]"}
+{"query": "ارقام التواصل？","expected": "ارقام التواصل"}
+{"query": "االفروع وارقام التواصل؟","expected": "فروع و أرقام التواصل"}
+{"query": "عايز حاجه مريحه لفقرات الضهر وعندي غضروف","expected": "هيفين"}
+{"query": "عايزه اسال عن اماكن الشركه في القاهره وهل موجود مخدات رقبه ؟","expected": "فروع القاهره ومخدات الرقبه"}
+{"query": "عندكم مراتب سوست منفصلة ومبتنقلش الحركة？", "expected": "بيرلا بوكيت"}
+{"query": "بدور على مرتبة تكون ناشفة ومبتغرقش لجوه", "expected": "كوين"}
+{"query": "حاجة فخمة زي الفنادق الكبيرة","expected": "نيو ماريوت"}
+{"query": "فين فروعكم في القاهره وايه مواعيد العمل ؟", "expected": "فروع القاهرة"}
+{"query": "عايزه مرتبه مريحه للضهر ", "expected": "مرتبة مريحة للظهر"}
+{"query": "hello i need to know your branches if you please?", "expected": "فروع"}
+{"query": "difference between contour memory foam and the long contour pillow in term of use and price ?", "expected": "الوسادة كونتور ميموري فوم"}
+{"query": "what about nasr city branch?", "expected": "مدينة نصر"}
+{"query": "فروعكم في القاهره ومواعيد العمل؟", "expected": "فروع القاهرة"}
+{"query": "ازاى اقدر ارجع منتج فيه مشكله ؟", "expected": "منتج فيه مشكلة"}
+{"query": "Do you have king-size mattresses? tell me about your delivery and warranty policies", "expected": "كوين"}
+{"query": "عايزه عنوان فرع زايد", "expected": "عنوان فرع زايد"}
+{"query": "عايزه اعرف اسعار المراتب الميمورى فوم كونتور و ال long contour", "expected": "مراتب ميموري فوم كونتور"}
+{"query": "what are your branches?", "expected": "فروع"}
+{"query": "what are your branches in cairo?", "expected": "فروع القاهرة"}

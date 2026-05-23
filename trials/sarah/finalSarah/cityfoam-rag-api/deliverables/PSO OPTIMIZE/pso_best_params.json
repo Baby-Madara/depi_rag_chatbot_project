@@ -1,0 +1,9 @@
+{
+  "top_k": 6,
+  "similarity_threshold": 0.40,
+  "chunk_weight": 0.2827,
+  "weight_semantic": 0.368,
+  "weight_keyword": 0.32,
+  "weight_recency": 0.2422,
+  "weight_authority": 0.0698
+}

@@ -1,0 +1,78 @@
+{
+  "timestamp": "2026-05-18T01:06:31.886167",
+  "search_optimization": {
+    "optimization_type": "search_parameters",
+    "best_params": {
+      "top_k": 7,
+      "similarity_threshold": 0.0213,
+      "chunk_weight": 0.4111
+    },
+    "best_cost": 0.375,
+    "cost_history": [
+      0.375,
+      0.375,
+      0.375,
+      0.375,
+      0.375,
+      0.375,
+      0.375,
+      0.375,
+      0.375,
+      0.375,
+      0.375,
+      0.375,
+      0.375,
+      0.375,
+      0.375,
+      0.375,
+      0.375,
+      0.375,
+      0.375,
+      0.375
+    ],
+    "convergence_info": {
+      "initial_cost": 0.375,
+      "final_cost": 0.375,
+      "improvement_%": 0.0,
+      "iterations": 20
+    }
+  },
+  "ranking_optimization": {
+    "optimization_type": "ranking_weights",
+    "best_params": {
+      "semantic_weight": 0.3196,
+      "keyword_weight": 0.2363,
+      "recency_weight": 0.2516,
+      "authority_weight": 0.1924
+    },
+    "best_cost": 0.375,
+    "cost_history": [
+      0.375,
+      0.375,
+      0.375,
+      0.375,
+      0.375,
+      0.375,
+      0.375,
+      0.375,
+      0.375,
+      0.375,
+      0.375,
+      0.375,
+      0.375,
+      0.375,
+      0.375,
+      0.375,
+      0.375,
+      0.375,
+      0.375,
+      0.375
+    ],
+    "convergence_info": {
+      "initial_cost": 0.375,
+      "final_cost": 0.375,
+      "improvement_%": 0.0,
+      "iterations": 20
+    }
+  }
+}

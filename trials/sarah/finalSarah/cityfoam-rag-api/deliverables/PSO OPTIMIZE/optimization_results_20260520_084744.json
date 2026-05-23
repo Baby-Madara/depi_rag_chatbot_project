@@ -1,0 +1,78 @@
+{
+  "timestamp": "2026-05-20T08:47:44.864144",
+  "search_optimization": {
+    "optimization_type": "search_parameters",
+    "best_params": {
+      "top_k": 9,
+      "similarity_threshold": 0.0213,
+      "chunk_weight": 0.5706
+    },
+    "best_cost": 0.625,
+    "cost_history": [
+      1.0,
+      1.0,
+      1.0,
+      0.625,
+      0.625,
+      0.625,
+      0.625,
+      0.625,
+      0.625,
+      0.625,
+      0.625,
+      0.625,
+      0.625,
+      0.625,
+      0.625,
+      0.625,
+      0.625,
+      0.625,
+      0.625,
+      0.625
+    ],
+    "convergence_info": {
+      "initial_cost": 1.0,
+      "final_cost": 0.625,
+      "improvement_%": 37.5,
+      "iterations": 20
+    }
+  },
+  "ranking_optimization": {
+    "optimization_type": "ranking_weights",
+    "best_params": {
+      "semantic_weight": 0.4029,
+      "keyword_weight": 0.204,
+      "recency_weight": 0.312,
+      "authority_weight": 0.0811
+    },
+    "best_cost": 0.75,
+    "cost_history": [
+      0.75,
+      0.75,
+      0.75,
+      0.75,
+      0.75,
+      0.75,
+      0.75,
+      0.75,
+      0.75,
+      0.75,
+      0.75,
+      0.75,
+      0.75,
+      0.75,
+      0.75,
+      0.75,
+      0.75,
+      0.75,
+      0.75,
+      0.75
+    ],
+    "convergence_info": {
+      "initial_cost": 0.75,
+      "final_cost": 0.75,
+      "improvement_%": 0.0,
+      "iterations": 20
+    }
+  }
+}
